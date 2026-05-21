@@ -1,34 +1,72 @@
 name: dev-check-repository
 
-on: [push]
+on:
+  push:
+  workflow_dispatch:
 
 jobs:
   build-node-test:
     runs-on: ubuntu-latest
-
-    container:
-      image: opendigitaleducation/node:10-alpine
-      options: --user root -v ${{ github.workspace }}:/home/node/:rw
-
     steps:
-      - uses: actions/checkout@v1
-      - name: Run npm install
-        run: npm install
-      - name: Run build node with Gulp
-        run: node_modules/gulp/bin/gulp.js build
-      - name: Run test
-        run: npm test
+      - uses: actions/checkout@v4
 
-  build-gradle-test:
+      - name: Build with Node 10 via Docker
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" \
+            -w /workspace \
+            --user root \
+            opendigitaleducation/node:10-alpine \
+            sh -c "npm install && node_modules/gulp/bin/gulp.js build"
+
+  build-maven-test:
     runs-on: ubuntu-latest
-
-    container:
-      image: gradle:4.5-alpine
-      options: --user root -v ${{ github.workspace }}:/home/gradle/:rw
-
     steps:
-      - uses: actions/checkout@v1
-      - name: Run build gradle
-        run: gradle assemble -g gradle-user-home
-      - name: Run gradle test
-        run: gradle test  -g gradle-user-home --no-build-cache --rerun-tasks
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '8'
+          distribution: temurin
+          cache: maven
+
+      - name: Configure Maven
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml << EOF
+          <settings>
+            <servers>
+              <server>
+                <id>github</id>
+                <username>$GITHUB_ACTOR</username>
+                <password>$GITHUB_TOKEN</password>
+              </server>
+            </servers>
+            <profiles>
+              <profile>
+                <id>ode-nexus</id>
+                <repositories>
+                  <repository>
+                    <id>ode</id>
+                    <name>ODE Repository</name>
+                    <url>https://maven.opendigitaleducation.com/nexus/content/groups/public</url>
+                    <releases><enabled>true</enabled></releases>
+                    <snapshots><enabled>true</enabled></snapshots>
+                  </repository>
+                </repositories>
+              </profile>
+            </profiles>
+            <activeProfiles>
+              <activeProfile>ode-nexus</activeProfile>
+            </activeProfiles>
+          </settings>
+          EOF
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+
+      - name: Run build maven
+        run: mvn clean install -DskipTests -B
+
+      - name: Run maven test
+        run: mvn test -B
