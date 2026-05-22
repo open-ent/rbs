@@ -78,12 +78,12 @@ jobs:
             </servers>
             <profiles>
               <profile>
-                <id>ode-nexus</id>
+                <id>github-packages</id>
                 <repositories>
                   <repository>
-                    <id>ode</id>
-                    <name>ODE Repository</name>
-                    <url>https://maven.opendigitaleducation.com/nexus/content/groups/public</url>
+                    <id>github</id>
+                    <name>GitHub open-ent Packages</name>
+                    <url>https://maven.pkg.github.com/open-ent/entcore-v2</url>
                     <releases><enabled>true</enabled></releases>
                     <snapshots><enabled>true</enabled></snapshots>
                   </repository>
@@ -91,7 +91,7 @@ jobs:
               </profile>
             </profiles>
             <activeProfiles>
-              <activeProfile>ode-nexus</activeProfile>
+              <activeProfile>github-packages</activeProfile>
             </activeProfiles>
           </settings>
           EOF
