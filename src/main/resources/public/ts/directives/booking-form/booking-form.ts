@@ -309,9 +309,9 @@ export const bookingForm = ng.directive('bookingForm', ['BookingEventService', '
                 } else {
                     vm.booking.startTime = minTime;
                     if (startMoment.isAfter(maxTime)) {
-                        startMoment.add('day', 1);
-                        endMoment.add('day', 1);
-                        maxTime.add('day', 1);
+                        startMoment.add(1, 'day');
+                        endMoment.add(1, 'day');
+                        maxTime.add(1, 'day');
                     }
                 }
                 if (endMoment.isBefore(maxTime)) {

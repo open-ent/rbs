@@ -134,7 +134,7 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
                 STATE_PARTIAL: model.STATE_PARTIAL,
             };
             $scope.today = moment().startOf('day');
-            $scope.tomorrow = moment().add('day', 1).startOf('day');
+            $scope.tomorrow = moment().add(1, 'day').startOf('day');
 
             $scope.booking = new Booking();
             $scope.initBookingDates(moment(), moment());
@@ -177,7 +177,7 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
             //fixme Why started with today date ....
             model.bookings.filters.startMoment = moment().startOf('day');
             //fixme Why two month ?
-            model.bookings.filters.endMoment = moment().add('month', 2).startOf('day');
+            model.bookings.filters.endMoment = moment().add(2, 'month').startOf('day');
             model.bookings.filters.startDate = model.bookings.filters.startMoment.toDate();
             model.bookings.filters.endDate = model.bookings.filters.endMoment.toDate();
 
@@ -948,9 +948,9 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
             } else {
                 $scope.booking.startTime = minTime;
                 if (startMoment.isAfter(maxTime)) {
-                    startMoment.add('day', 1);
-                    endMoment.add('day', 1);
-                    maxTime.add('day', 1);
+                    startMoment.add(1, 'day');
+                    endMoment.add(1, 'day');
+                    maxTime.add(1, 'day');
                 }
             }
             if (endMoment.isBefore(maxTime)) {

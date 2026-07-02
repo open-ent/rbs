@@ -727,16 +727,16 @@ function Slot(book) {
 
 function SlotJson(start, end) {
     return {
-        start_date: (moment.utc(start._i).add('hours', -moment(this.startMoment._i).format('Z').split(':')[0])).unix(),
-        end_date: (moment.utc(end._i).add('hours', -moment(this.startMoment._i).format('Z').split(':')[0])).unix(),
+        start_date: (moment.utc(start._i).add(-moment(this.startMoment._i).format('Z').split(':')[0], 'hours')).unix(),
+        end_date: (moment.utc(end._i).add(-moment(this.startMoment._i).format('Z').split(':')[0], 'hours')).unix(),
         iana: moment.tz.guess()
     }
 }
 
 Slot.prototype.toJson = function () {
     return {
-        start_date: (moment.utc(this.startMoment._i).add('hours', -moment(this.startMoment._i).format('Z').split(':')[0])).unix(),
-        end_date: (moment.utc(this.endMoment._i).add('hours', -moment(this.startMoment._i).format('Z').split(':')[0])).unix(),
+        start_date: (moment.utc(this.startMoment._i).add(-moment(this.startMoment._i).format('Z').split(':')[0], 'hours')).unix(),
+        end_date: (moment.utc(this.endMoment._i).add(-moment(this.startMoment._i).format('Z').split(':')[0], 'hours')).unix(),
         iana: moment.tz.guess()
     }
 };
