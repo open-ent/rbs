@@ -1,18 +1,38 @@
-import { useQuery } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
 import { api, Resource, ResourceType } from '../api';
+import { ResourceDialog } from './ResourceDialog';
+import { TypeDialog } from './TypeDialog';
 
-/** Écran d'accueil : types de ressources et, sous chacun, ses ressources réservables. */
+type TypeDialogState = { mode: 'new' } | { mode: 'edit'; type: ResourceType } | null;
+type ResourceDialogState = { typeId: number; resource?: Resource } | null;
+
+/** Écran d'accueil : types + ressources, avec gestion (CRUD types/ressources). */
 export function Resources() {
   const { t } = useTranslation(['rbs', 'common']);
+  const qc = useQueryClient();
 
   const typesQuery = useQuery({ queryKey: ['rbs', 'types'], queryFn: api.getTypes });
   const resourcesQuery = useQuery({ queryKey: ['rbs', 'resources'], queryFn: api.getResources });
 
-  // Ressources regroupées par type_id.
+  const [typeDialog, setTypeDialog] = useState<TypeDialogState>(null);
+  const [resourceDialog, setResourceDialog] = useState<ResourceDialogState>(null);
+
+  const deleteTypeMut = useMutation({
+    mutationFn: (id: number) => api.deleteType(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['rbs', 'types'] });
+      qc.invalidateQueries({ queryKey: ['rbs', 'resources'] });
+    },
+  });
+  const deleteResourceMut = useMutation({
+    mutationFn: (id: number) => api.deleteResource(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['rbs', 'resources'] }),
+  });
+
   const byType = useMemo(() => {
     const map = new Map<number, Resource[]>();
     (resourcesQuery.data ?? []).forEach((r) => {
@@ -29,11 +49,30 @@ export function Resources() {
 
   return (
     <div>
+      {typeDialog && (
+        <TypeDialog
+          type={typeDialog.mode === 'edit' ? typeDialog.type : undefined}
+          onClose={() => setTypeDialog(null)}
+        />
+      )}
+      {resourceDialog && (
+        <ResourceDialog
+          typeId={resourceDialog.typeId}
+          resource={resourceDialog.resource}
+          onClose={() => setResourceDialog(null)}
+        />
+      )}
+
       <div className="d-flex align-items-center justify-content-between mb-16">
         <h1 className="m-0">{t('rbs.title', { defaultValue: 'Réservation de ressources' })}</h1>
-        <Link to="/moderation" className="btn btn-secondary">
-          {t('rbs.moderation.title', { defaultValue: 'Modération des réservations' })}
-        </Link>
+        <div className="d-flex gap-8">
+          <Link to="/moderation" className="btn btn-secondary">
+            {t('rbs.moderation.title', { defaultValue: 'Modération des réservations' })}
+          </Link>
+          <button type="button" className="btn btn-primary" onClick={() => setTypeDialog({ mode: 'new' })}>
+            {t('rbs.type.new', { defaultValue: 'Nouveau type' })}
+          </button>
+        </div>
       </div>
 
       {loading && <p>{t('rbs.loading', { defaultValue: 'Chargement…' })}</p>}
@@ -43,32 +82,48 @@ export function Resources() {
         </div>
       )}
       {!loading && types.length === 0 && (
-        <p className="text-muted">
-          {t('rbs.no.types', { defaultValue: 'Aucun type de ressource disponible.' })}
-        </p>
+        <p className="text-muted">{t('rbs.no.types', { defaultValue: 'Aucun type de ressource. Créez-en un.' })}</p>
       )}
 
       {types.map((type: ResourceType) => {
         const resources = byType.get(type.id) ?? [];
         return (
           <section key={type.id} className="mb-24">
-            <h2 className="d-flex align-items-center gap-8 mb-12" style={{ fontSize: 20 }}>
-              <span
-                aria-hidden
-                style={{
-                  display: 'inline-block',
-                  width: 14,
-                  height: 14,
-                  borderRadius: 3,
-                  background: type.color ?? '#4bafd5',
-                }}
-              />
-              {type.name}
-            </h2>
+            <div className="d-flex align-items-center justify-content-between mb-12">
+              <h2 className="d-flex align-items-center gap-8 m-0" style={{ fontSize: 20 }}>
+                <span
+                  aria-hidden
+                  style={{ display: 'inline-block', width: 14, height: 14, borderRadius: 3, background: type.color ?? '#4bafd5' }}
+                />
+                {type.name}
+                {type.validation && (
+                  <span className="badge bg-info" style={{ fontSize: 11 }}>
+                    {t('rbs.validation.short', { defaultValue: 'Validation' })}
+                  </span>
+                )}
+              </h2>
+              <div className="d-flex gap-8">
+                <button type="button" className="btn btn-link p-0" onClick={() => setResourceDialog({ typeId: type.id })}>
+                  {t('rbs.resource.add', { defaultValue: 'Ajouter une ressource' })}
+                </button>
+                <button type="button" className="btn btn-link p-0" onClick={() => setTypeDialog({ mode: 'edit', type })}>
+                  {t('rbs.edit', { defaultValue: 'Modifier' })}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-link p-0 text-danger"
+                  onClick={() => {
+                    if (window.confirm(t('rbs.type.confirm.delete', { defaultValue: 'Supprimer ce type et ses ressources ?' })))
+                      deleteTypeMut.mutate(type.id);
+                  }}
+                >
+                  {t('rbs.delete', { defaultValue: 'Supprimer' })}
+                </button>
+              </div>
+            </div>
+
             {resources.length === 0 ? (
-              <p className="text-muted ms-24">
-                {t('rbs.no.resources', { defaultValue: 'Aucune ressource dans ce type.' })}
-              </p>
+              <p className="text-muted ms-24">{t('rbs.no.resources', { defaultValue: 'Aucune ressource dans ce type.' })}</p>
             ) : (
               <ul className="list-unstyled ms-24">
                 {resources.map((r) => (
@@ -81,15 +136,24 @@ export function Resources() {
                     </div>
                     <div className="d-flex align-items-center gap-8">
                       {r.validation && (
-                        <span className="badge bg-info" title={t('rbs.validation.required', { defaultValue: 'Soumise à validation' })}>
-                          {t('rbs.validation.short', { defaultValue: 'Validation' })}
-                        </span>
+                        <span className="badge bg-info">{t('rbs.validation.short', { defaultValue: 'Validation' })}</span>
                       )}
                       {!r.is_available && (
-                        <span className="badge bg-secondary">
-                          {t('rbs.unavailable', { defaultValue: 'Indisponible' })}
-                        </span>
+                        <span className="badge bg-secondary">{t('rbs.unavailable', { defaultValue: 'Indisponible' })}</span>
                       )}
+                      <button type="button" className="btn btn-link p-0" onClick={() => setResourceDialog({ typeId: type.id, resource: r })}>
+                        {t('rbs.edit', { defaultValue: 'Modifier' })}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-link p-0 text-danger"
+                        onClick={() => {
+                          if (window.confirm(t('rbs.resource.confirm.delete', { defaultValue: 'Supprimer cette ressource ?' })))
+                            deleteResourceMut.mutate(r.id);
+                        }}
+                      >
+                        {t('rbs.delete', { defaultValue: 'Supprimer' })}
+                      </button>
                     </div>
                   </li>
                 ))}

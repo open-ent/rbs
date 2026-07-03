@@ -85,6 +85,30 @@ export interface ProcessBookingBody {
   refusal_reason?: string;
 }
 
+/** Corps de création d'un type de ressource (cf. jsonschema/createResourceType.json). */
+export interface CreateTypeBody {
+  name: string;
+  validation: boolean;
+  school_id: string;
+  color: string;
+}
+/** Corps de mise à jour d'un type (school_id non requis). */
+export interface UpdateTypeBody {
+  name: string;
+  validation: boolean;
+  color: string;
+}
+/** Champs éditables d'une ressource (création/màj ; cf. jsonschema/create|updateResource.json). */
+export interface ResourceInput {
+  name: string;
+  description?: string;
+  periodic_booking: boolean;
+  is_available: boolean;
+  validation?: boolean;
+  quantity?: number;
+  color?: string;
+}
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) throw new Error(String(res.status));
   const text = await res.text();
@@ -164,6 +188,52 @@ export const deleteBooking = async (
   if (!res.ok && res.status !== 204) throw new Error(String(res.status));
 };
 
+// ── Gestion des types ────────────────────────────────────────────────────────
+export const createType = async (body: CreateTypeBody): Promise<ResourceType> =>
+  json<ResourceType>(
+    await fetch('/rbs/type', { ...base, method: 'POST', headers: jsonHeaders, body: JSON.stringify(body) }),
+  );
+
+export const updateType = async (id: number, body: UpdateTypeBody): Promise<ResourceType> =>
+  json<ResourceType>(
+    await fetch(`/rbs/type/${id}`, { ...base, method: 'PUT', headers: jsonHeaders, body: JSON.stringify(body) }),
+  );
+
+export const deleteType = async (id: number): Promise<void> => {
+  const res = await fetch(`/rbs/type/${id}`, { ...base, method: 'DELETE' });
+  if (!res.ok && res.status !== 204) throw new Error(String(res.status));
+};
+
+// ── Gestion des ressources ────────────────────────────────────────────────────
+export const createResource = async (typeId: number, body: ResourceInput): Promise<Resource> =>
+  json<Resource>(
+    await fetch(`/rbs/type/${typeId}/resource`, { ...base, method: 'POST', headers: jsonHeaders, body: JSON.stringify(body) }),
+  );
+
+/**
+ * Met à jour une ressource. Le PUT exige `type_id` et `was_available` (ancienne valeur de
+ * `is_available`), en plus des champs éditables (cf. jsonschema/updateResource.json).
+ */
+export const updateResource = async (
+  id: number,
+  typeId: number,
+  wasAvailable: boolean,
+  body: ResourceInput,
+): Promise<Resource> =>
+  json<Resource>(
+    await fetch(`/rbs/resource/${id}`, {
+      ...base,
+      method: 'PUT',
+      headers: jsonHeaders,
+      body: JSON.stringify({ ...body, type_id: typeId, was_available: wasAvailable }),
+    }),
+  );
+
+export const deleteResource = async (id: number): Promise<void> => {
+  const res = await fetch(`/rbs/resource/${id}`, { ...base, method: 'DELETE' });
+  if (!res.ok && res.status !== 204) throw new Error(String(res.status));
+};
+
 export const api = {
   getTypes,
   getResources,
@@ -174,4 +244,10 @@ export const api = {
   getUnprocessedBookings,
   processBooking,
   deleteBooking,
+  createType,
+  updateType,
+  deleteType,
+  createResource,
+  updateResource,
+  deleteResource,
 };
