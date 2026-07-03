@@ -1,5 +1,6 @@
 import { RouteObject, createBrowserRouter } from 'react-router-dom';
 
+import { Moderation } from './screens/Moderation';
 import { Resource } from './screens/Resource';
 import { Resources } from './screens/Resources';
 import { Root } from './screens/Root';
@@ -14,6 +15,7 @@ export const routes: RouteObject[] = [
     children: [
       { index: true, element: <Resources /> },
       { path: 'resource/:resourceId', element: <Resource /> },
+      { path: 'moderation', element: <Moderation /> },
     ],
   },
 ];

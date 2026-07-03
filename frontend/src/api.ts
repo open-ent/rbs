@@ -64,6 +64,27 @@ export interface CreateBookingBody {
   slots: Slot[];
 }
 
+/**
+ * Corps de POST /rbs/resource/:id/booking/periodic (cf. jsonschema/createPeriodicBooking.json).
+ * `days` : 7 booléens, index 0 = dimanche … 6 = samedi. Renseigner `periodic_end_date` OU `occurrences`.
+ */
+export interface CreatePeriodicBookingBody {
+  booking_reason: string;
+  quantity: number;
+  slots: Slot[];
+  periodicity: number;
+  days: boolean[];
+  iana: string;
+  periodic_end_date?: number;
+  occurrences?: number;
+}
+
+/** Corps de PUT /rbs/resource/:id/booking/:bookingId/process. */
+export interface ProcessBookingBody {
+  status: number;
+  refusal_reason?: string;
+}
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) throw new Error(String(res.status));
   const text = await res.text();
@@ -97,6 +118,39 @@ export const createBooking = async (resourceId: number, body: CreateBookingBody)
     }),
   );
 
+export const createPeriodicBooking = async (
+  resourceId: number,
+  body: CreatePeriodicBookingBody,
+): Promise<Booking> =>
+  json<Booking>(
+    await fetch(`/rbs/resource/${resourceId}/booking/periodic`, {
+      ...base,
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify(body),
+    }),
+  );
+
+// ── Modération ───────────────────────────────────────────────────────────────
+/** File des réservations à traiter (droit modérateur `rbs.booking.list.unprocessed`). */
+export const getUnprocessedBookings = async (): Promise<Booking[]> =>
+  json<Booking[]>(await fetch('/rbs/bookings/unprocessed', base));
+
+/** Valide (status 2) ou refuse (status 3, avec motif) une réservation. */
+export const processBooking = async (
+  resourceId: number,
+  bookingId: number,
+  body: ProcessBookingBody,
+): Promise<Booking> =>
+  json<Booking>(
+    await fetch(`/rbs/resource/${resourceId}/booking/${bookingId}/process`, {
+      ...base,
+      method: 'PUT',
+      headers: jsonHeaders,
+      body: JSON.stringify(body),
+    }),
+  );
+
 /** Supprime une réservation. `thisAndAfter=false` : uniquement l'occurrence visée. */
 export const deleteBooking = async (
   resourceId: number,
@@ -116,5 +170,8 @@ export const api = {
   getResource,
   getResourceBookings,
   createBooking,
+  createPeriodicBooking,
+  getUnprocessedBookings,
+  processBooking,
   deleteBooking,
 };

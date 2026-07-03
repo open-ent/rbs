@@ -29,7 +29,12 @@ export function Resources() {
 
   return (
     <div>
-      <h1 className="mb-16">{t('rbs.title', { defaultValue: 'Réservation de ressources' })}</h1>
+      <div className="d-flex align-items-center justify-content-between mb-16">
+        <h1 className="m-0">{t('rbs.title', { defaultValue: 'Réservation de ressources' })}</h1>
+        <Link to="/moderation" className="btn btn-secondary">
+          {t('rbs.moderation.title', { defaultValue: 'Modération des réservations' })}
+        </Link>
+      </div>
 
       {loading && <p>{t('rbs.loading', { defaultValue: 'Chargement…' })}</p>}
       {error && (

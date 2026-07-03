@@ -3,12 +3,23 @@ import { FormEvent, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useParams } from 'react-router-dom';
 
-import { api } from '../api';
+import { api, Slot } from '../api';
 import { formatDateTime, localInputToUnix, statusBadgeClass, statusLabel } from '../utils';
 
 const IANA = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris';
 
-/** Détail d'une ressource : informations, liste des réservations, création d'une réservation simple. */
+/** Jours de la semaine, dans l'ordre d'affichage FR (lundi→dimanche), avec l'index backend (0=dimanche). */
+const DAYS = [
+  { idx: 1, label: 'Lun' },
+  { idx: 2, label: 'Mar' },
+  { idx: 3, label: 'Mer' },
+  { idx: 4, label: 'Jeu' },
+  { idx: 5, label: 'Ven' },
+  { idx: 6, label: 'Sam' },
+  { idx: 0, label: 'Dim' },
+];
+
+/** Détail d'une ressource : infos, liste des réservations, création (simple ou périodique). */
 export function Resource() {
   const { resourceId = '' } = useParams();
   const id = Number(resourceId);
@@ -29,37 +40,71 @@ export function Resource() {
 
   const invalidate = () => qc.invalidateQueries({ queryKey: bookingsKey });
 
+  // Champs communs
   const [reason, setReason] = useState('');
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [formError, setFormError] = useState('');
+  // Périodique
+  const [periodic, setPeriodic] = useState(false);
+  const [periodicity, setPeriodicity] = useState(1);
+  const [days, setDays] = useState<boolean[]>(Array(7).fill(false));
+  const [endMode, setEndMode] = useState<'date' | 'occurrences'>('occurrences');
+  const [periodicEnd, setPeriodicEnd] = useState('');
+  const [occurrences, setOccurrences] = useState(1);
+
+  const resetForm = () => {
+    setReason('');
+    setStart('');
+    setEnd('');
+    setQuantity(1);
+    setPeriodic(false);
+    setPeriodicity(1);
+    setDays(Array(7).fill(false));
+    setEndMode('occurrences');
+    setPeriodicEnd('');
+    setOccurrences(1);
+    setFormError('');
+  };
 
   const createMut = useMutation({
     mutationFn: () => {
-      const startUnix = localInputToUnix(start);
-      const endUnix = localInputToUnix(end);
-      return api.createBooking(id, {
+      const slot: Slot = {
+        start_date: localInputToUnix(start),
+        end_date: localInputToUnix(end),
+        iana: IANA,
+      };
+      if (!periodic) {
+        return api.createBooking(id, { booking_reason: reason.trim(), quantity, slots: [slot] });
+      }
+      return api.createPeriodicBooking(id, {
         booking_reason: reason.trim(),
         quantity,
-        slots: [{ start_date: startUnix, end_date: endUnix, iana: IANA }],
+        slots: [slot],
+        periodicity,
+        days,
+        iana: IANA,
+        ...(endMode === 'date'
+          ? { periodic_end_date: localInputToUnix(`${periodicEnd}T23:59`) }
+          : { occurrences }),
       });
     },
     onSuccess: () => {
-      setReason('');
-      setStart('');
-      setEnd('');
-      setQuantity(1);
-      setFormError('');
+      resetForm();
       invalidate();
     },
-    onError: () => setFormError(t('rbs.booking.error', { defaultValue: 'La réservation a échoué (créneau indisponible ou invalide).' })),
+    onError: () =>
+      setFormError(t('rbs.booking.error', { defaultValue: 'La réservation a échoué (créneau indisponible ou invalide).' })),
   });
 
   const deleteMut = useMutation({
     mutationFn: (bookingId: number) => api.deleteBooking(id, bookingId),
     onSuccess: invalidate,
   });
+
+  const toggleDay = (dayIdx: number) =>
+    setDays((prev) => prev.map((v, i) => (i === dayIdx ? !v : v)));
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -73,6 +118,17 @@ export function Resource() {
       setFormError(t('rbs.booking.badrange', { defaultValue: 'La date de fin doit être postérieure au début.' }));
       return;
     }
+    if (periodic) {
+      if (!days.some(Boolean)) {
+        setFormError(t('rbs.booking.nodays', { defaultValue: 'Sélectionnez au moins un jour de la semaine.' }));
+        return;
+      }
+      if (endMode === 'date' && !periodicEnd) {
+        setFormError(t('rbs.booking.noend', { defaultValue: 'Renseignez une date de fin de périodicité.' }));
+        return;
+      }
+    }
+    setFormError('');
     createMut.mutate();
   };
 
@@ -104,7 +160,7 @@ export function Resource() {
         </>
       )}
 
-      {/* Formulaire de réservation simple */}
+      {/* Formulaire de réservation (simple ou périodique) */}
       <form className="card p-16 my-16" onSubmit={onSubmit}>
         <h2 style={{ fontSize: 18 }} className="mb-12">
           {t('rbs.booking.new', { defaultValue: 'Réserver' })}
@@ -151,6 +207,89 @@ export function Resource() {
             />
           </div>
         </div>
+
+        {/* Périodicité (si la ressource l'autorise) */}
+        {resource?.periodic_booking && (
+          <div className="mt-12">
+            <div className="form-check">
+              <input
+                id="rbs-periodic"
+                type="checkbox"
+                className="form-check-input"
+                checked={periodic}
+                onChange={(e) => setPeriodic(e.target.checked)}
+              />
+              <label htmlFor="rbs-periodic" className="form-check-label">
+                {t('rbs.booking.periodic', { defaultValue: 'Réservation périodique' })}
+              </label>
+            </div>
+
+            {periodic && (
+              <div className="ms-16 mt-8">
+                <div className="d-flex align-items-center gap-8 mb-8">
+                  <label htmlFor="rbs-periodicity" className="form-label m-0">
+                    {t('rbs.booking.every', { defaultValue: 'Toutes les' })}
+                  </label>
+                  <input
+                    id="rbs-periodicity"
+                    type="number"
+                    min={1}
+                    className="form-control"
+                    style={{ width: 80 }}
+                    value={periodicity}
+                    onChange={(e) => setPeriodicity(Math.max(1, Number(e.target.value) || 1))}
+                  />
+                  <span>{t('rbs.booking.weeks', { defaultValue: 'semaine(s)' })}</span>
+                </div>
+
+                <div className="mb-8">
+                  <span className="form-label d-block">{t('rbs.booking.days', { defaultValue: 'Jours' })}</span>
+                  <div className="d-flex gap-8 flex-wrap">
+                    {DAYS.map((d) => (
+                      <label key={d.idx} className="d-flex align-items-center gap-4">
+                        <input type="checkbox" checked={days[d.idx]} aria-label={d.label} onChange={() => toggleDay(d.idx)} />
+                        {d.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="d-flex align-items-center gap-16 flex-wrap">
+                  <label className="d-flex align-items-center gap-4">
+                    <input type="radio" name="rbs-endmode" checked={endMode === 'occurrences'} onChange={() => setEndMode('occurrences')} />
+                    {t('rbs.booking.after', { defaultValue: 'Après' })}
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    className="form-control"
+                    style={{ width: 90 }}
+                    disabled={endMode !== 'occurrences'}
+                    value={occurrences}
+                    aria-label={t('rbs.booking.occurrences', { defaultValue: 'Nombre d’occurrences' })}
+                    onChange={(e) => setOccurrences(Math.max(1, Number(e.target.value) || 1))}
+                  />
+                  <span>{t('rbs.booking.occurrences.unit', { defaultValue: 'occurrence(s)' })}</span>
+
+                  <label className="d-flex align-items-center gap-4">
+                    <input type="radio" name="rbs-endmode" checked={endMode === 'date'} onChange={() => setEndMode('date')} />
+                    {t('rbs.booking.until', { defaultValue: "Jusqu'au" })}
+                  </label>
+                  <input
+                    type="date"
+                    className="form-control"
+                    style={{ width: 170 }}
+                    disabled={endMode !== 'date'}
+                    value={periodicEnd}
+                    aria-label={t('rbs.booking.enddate', { defaultValue: 'Date de fin' })}
+                    onChange={(e) => setPeriodicEnd(e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {formError && (
           <div className="alert alert-warning mt-12 mb-0" role="alert">
             {formError}
@@ -169,7 +308,7 @@ export function Resource() {
       </h2>
       {bookingsQuery.isLoading && <p>{t('rbs.loading', { defaultValue: 'Chargement…' })}</p>}
       {!bookingsQuery.isLoading && bookings.length === 0 && (
-        <p className="text-muted">{t('rbs.bookings.empty', { defaultValue: 'Aucune réservation pour cette ressource.' })}</p>
+        <p className="text-muted">{t('rbs.bookings.none', { defaultValue: 'Aucune réservation pour cette ressource.' })}</p>
       )}
       {bookings.length > 0 && (
         <table className="table">
@@ -185,7 +324,14 @@ export function Resource() {
           <tbody>
             {bookings.map((b) => (
               <tr key={b.id}>
-                <td>{b.booking_reason}</td>
+                <td>
+                  {b.booking_reason}
+                  {b.is_periodic && (
+                    <span className="badge bg-light text-dark ms-8">
+                      {t('rbs.booking.periodic.short', { defaultValue: 'Périodique' })}
+                    </span>
+                  )}
+                </td>
                 <td>{formatDateTime(b.start_date)}</td>
                 <td>{formatDateTime(b.end_date)}</td>
                 <td>
