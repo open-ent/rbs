@@ -183,6 +183,10 @@ export const getResource = async (id: number): Promise<Resource> =>
 export const getResourceBookings = async (id: number): Promise<Booking[]> =>
   json<Booking[]>(await fetch(`/rbs/resource/${id}/bookings`, base));
 
+/** Réservations sur une période (dates « yyyy-MM-dd »), toutes ressources accessibles confondues. */
+export const getBookingsInRange = async (startdate: string, enddate: string): Promise<Booking[]> =>
+  json<Booking[]>(await fetch(`/rbs/bookings/all/${startdate}/${enddate}`, base));
+
 // ── Écriture ────────────────────────────────────────────────────────────────
 export const createBooking = async (resourceId: number, body: CreateBookingBody): Promise<Booking> =>
   json<Booking>(
@@ -337,6 +341,7 @@ export const api = {
   getResources,
   getResource,
   getResourceBookings,
+  getBookingsInRange,
   createBooking,
   createPeriodicBooking,
   getUnprocessedBookings,

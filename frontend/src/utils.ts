@@ -81,6 +81,44 @@ export function shortTime(hms?: string): string {
   return hms ? hms.slice(0, 5) : '';
 }
 
+/** Renvoie le lundi (00:00) de la semaine contenant `d`. */
+export function startOfWeek(d: Date): Date {
+  const date = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const day = date.getDay(); // 0 = dimanche
+  const diff = day === 0 ? -6 : 1 - day; // ramène au lundi
+  date.setDate(date.getDate() + diff);
+  return date;
+}
+
+/** Les 7 dates (lundi→dimanche) de la semaine débutant à `monday`. */
+export function weekDays(monday: Date): Date[] {
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    return d;
+  });
+}
+
+/** Format « yyyy-MM-dd » (pour les endpoints par période). */
+export function yyyymmdd(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+/** Même jour civil (année/mois/jour) qu'une date ISO ? */
+export function isSameDay(iso: string, d: Date): boolean {
+  const b = new Date(iso);
+  return b.getFullYear() === d.getFullYear() && b.getMonth() === d.getMonth() && b.getDate() === d.getDate();
+}
+
+/** Heure « HH:mm » (locale FR) d'une date ISO. */
+export function isoTime(iso?: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+}
+
 /** Libellés FR des jours cochés d'un bitstring (index 0 = dimanche). */
 export function bitstringToDayLabels(bits?: string): string {
   if (!bits) return '';

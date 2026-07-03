@@ -5,11 +5,15 @@ import {
   bitstringToDayLabels,
   dateInputToUnix,
   formatDateTime,
+  isSameDay,
   localInputToUnix,
   shortTime,
+  startOfWeek,
   statusBadgeClass,
   statusLabel,
   timeInputToSeconds,
+  weekDays,
+  yyyymmdd,
 } from './utils';
 
 describe('statusLabel', () => {
@@ -84,5 +88,24 @@ describe('bitstringToDayLabels', () => {
     expect(bitstringToDayLabels('0111110')).toBe('Lun, Mar, Mer, Jeu, Ven');
     expect(bitstringToDayLabels('1000001')).toBe('Dim, Sam');
     expect(bitstringToDayLabels('')).toBe('');
+  });
+});
+
+describe('semaine', () => {
+  it('startOfWeek ramène au lundi', () => {
+    // 2026-11-18 est un mercredi -> lundi = 2026-11-16
+    expect(yyyymmdd(startOfWeek(new Date('2026-11-18T12:00:00')))).toBe('2026-11-16');
+    // un dimanche (2026-11-22) -> lundi précédent 2026-11-16
+    expect(yyyymmdd(startOfWeek(new Date('2026-11-22T12:00:00')))).toBe('2026-11-16');
+  });
+  it('weekDays renvoie 7 jours lundi→dimanche', () => {
+    const days = weekDays(startOfWeek(new Date('2026-11-18T12:00:00')));
+    expect(days).toHaveLength(7);
+    expect(yyyymmdd(days[0])).toBe('2026-11-16');
+    expect(yyyymmdd(days[6])).toBe('2026-11-22');
+  });
+  it('isSameDay compare le jour civil', () => {
+    expect(isSameDay('2026-11-16T08:00:00.000', new Date('2026-11-16T23:00:00'))).toBe(true);
+    expect(isSameDay('2026-11-17T08:00:00.000', new Date('2026-11-16T23:00:00'))).toBe(false);
   });
 });

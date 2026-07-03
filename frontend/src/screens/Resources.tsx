@@ -75,6 +75,9 @@ export function Resources() {
       <div className="d-flex align-items-center justify-content-between mb-16">
         <h1 className="m-0">{t('rbs.title', { defaultValue: 'Réservation de ressources' })}</h1>
         <div className="d-flex gap-8">
+          <Link to="/agenda" className="btn btn-secondary">
+            {t('rbs.agenda.title', { defaultValue: 'Agenda' })}
+          </Link>
           <button type="button" className="btn btn-secondary" onClick={() => setExporting(true)}>
             {t('rbs.export.title', { defaultValue: 'Exporter' })}
           </button>
