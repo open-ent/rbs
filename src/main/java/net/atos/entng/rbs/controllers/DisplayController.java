@@ -41,25 +41,26 @@ public class DisplayController extends BaseController {
 	private enum RbsEvent { ACCESS }
 
 	/** IHM par défaut : "react" (nouvelle) ou "angular" (ancienne), piloté par la conf `frontend-ui`.
-	 *  Défaut "angular" tant que la migration React (CCTP 51C) n'a pas la parité.
+	 *  Défaut "react" : la migration React (CCTP 51C) a la parité fonctionnelle (réservations
+	 *  simple/périodique, modération, CRUD types/ressources, disponibilités, partage, export, agenda).
 	 *  NB : la génération springboard retire les clés de conf inconnues (dont `frontend-ui`) →
 	 *  c'est ce défaut Java qui pilote réellement ; repli/override par `?ui=react|angular`. */
-	private String frontendUi = "angular";
+	private String frontendUi = "react";
 
 	@Override
 	public void init(Vertx vertx, JsonObject config, RouteMatcher rm,
 					 Map<String, fr.wseduc.webutils.security.SecuredAction> securedActions) {
 		super.init(vertx, config, rm, securedActions);
-		this.frontendUi = "react".equals(config.getString("frontend-ui", "angular")) ? "react" : "angular";
+		this.frontendUi = "angular".equals(config.getString("frontend-ui", "react")) ? "angular" : "react";
 		eventStore = EventStoreFactory.getFactory().getEventStore(Rbs.class.getSimpleName());
 	}
 
 	@Get("")
 	@SecuredAction("rbs.view")
 	public void view(final HttpServerRequest request) {
-		// Choix de l'IHM (CCTP 51C — migration React) : défaut piloté par la conf `frontend-ui`
-		// (react|angular, défaut angular), override par requête `?ui=react|angular`.
-		// rbs.html = IHM AngularJS existante (défaut) ; rbs-react.html = nouvelle IHM React.
+		// Choix de l'IHM (CCTP 51C — migration React) : défaut React (parité atteinte),
+		// override par requête `?ui=react|angular`.
+		// rbs-react.html = IHM React (défaut) ; rbs.html = ancienne IHM AngularJS (repli).
 		final String uiParam = request.getParam("ui");
 		final String ui = ("react".equals(uiParam) || "angular".equals(uiParam)) ? uiParam : frontendUi;
 		final String view = "react".equals(ui) ? "rbs-react.html" : "rbs.html";
