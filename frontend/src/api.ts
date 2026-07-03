@@ -286,6 +286,29 @@ export const deleteResource = async (id: number): Promise<void> => {
   if (!res.ok && res.status !== 204) throw new Error(String(res.status));
 };
 
+// ── Export ────────────────────────────────────────────────────────────────────
+/** Corps de POST /rbs/bookings/export (cf. jsonschema/exportBookings.json). Dates « yyyy-MM-dd ». */
+export interface ExportBody {
+  startdate: string;
+  enddate: string;
+  format: 'ICAL' | 'PDF';
+  view: 'DAY' | 'WEEK' | 'LIST' | 'NA';
+  resourceIds?: number[];
+  usertimezone?: string;
+}
+
+/** Exporte les réservations et renvoie le fichier (PDF ou iCalendar) sous forme de Blob. */
+export const exportBookings = async (body: ExportBody): Promise<Blob> => {
+  const res = await fetch('/rbs/bookings/export', {
+    ...base,
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(String(res.status));
+  return res.blob();
+};
+
 // ── Disponibilités ────────────────────────────────────────────────────────────
 export const getResourceAvailability = async (resourceId: number): Promise<Availability[]> =>
   json<Availability[]>(await fetch(`/rbs/resource/${resourceId}/availability`, base));
@@ -330,4 +353,5 @@ export const api = {
   deleteAvailability,
   getTypeShare,
   shareTypeBatch,
+  exportBookings,
 };

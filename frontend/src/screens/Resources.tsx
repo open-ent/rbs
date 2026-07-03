@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
 import { api, Resource, ResourceType } from '../api';
+import { ExportDialog } from './ExportDialog';
 import { ResourceDialog } from './ResourceDialog';
 import { ShareDialog } from './ShareDialog';
 import { TypeDialog } from './TypeDialog';
@@ -23,6 +24,7 @@ export function Resources() {
   const [typeDialog, setTypeDialog] = useState<TypeDialogState>(null);
   const [resourceDialog, setResourceDialog] = useState<ResourceDialogState>(null);
   const [shareDialog, setShareDialog] = useState<ShareDialogState>(null);
+  const [exporting, setExporting] = useState(false);
 
   const deleteTypeMut = useMutation({
     mutationFn: (id: number) => api.deleteType(id),
@@ -68,10 +70,14 @@ export function Resources() {
       {shareDialog && (
         <ShareDialog typeId={shareDialog.typeId} typeName={shareDialog.typeName} onClose={() => setShareDialog(null)} />
       )}
+      {exporting && <ExportDialog onClose={() => setExporting(false)} />}
 
       <div className="d-flex align-items-center justify-content-between mb-16">
         <h1 className="m-0">{t('rbs.title', { defaultValue: 'Réservation de ressources' })}</h1>
         <div className="d-flex gap-8">
+          <button type="button" className="btn btn-secondary" onClick={() => setExporting(true)}>
+            {t('rbs.export.title', { defaultValue: 'Exporter' })}
+          </button>
           <Link to="/moderation" className="btn btn-secondary">
             {t('rbs.moderation.title', { defaultValue: 'Modération des réservations' })}
           </Link>
