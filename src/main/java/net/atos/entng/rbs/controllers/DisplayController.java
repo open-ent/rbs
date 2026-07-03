@@ -40,17 +40,30 @@ public class DisplayController extends BaseController {
 	private EventStore eventStore;
 	private enum RbsEvent { ACCESS }
 
+	/** IHM par défaut : "react" (nouvelle) ou "angular" (ancienne), piloté par la conf `frontend-ui`.
+	 *  Défaut "angular" tant que la migration React (CCTP 51C) n'a pas la parité.
+	 *  NB : la génération springboard retire les clés de conf inconnues (dont `frontend-ui`) →
+	 *  c'est ce défaut Java qui pilote réellement ; repli/override par `?ui=react|angular`. */
+	private String frontendUi = "angular";
+
 	@Override
 	public void init(Vertx vertx, JsonObject config, RouteMatcher rm,
 					 Map<String, fr.wseduc.webutils.security.SecuredAction> securedActions) {
 		super.init(vertx, config, rm, securedActions);
+		this.frontendUi = "react".equals(config.getString("frontend-ui", "angular")) ? "react" : "angular";
 		eventStore = EventStoreFactory.getFactory().getEventStore(Rbs.class.getSimpleName());
 	}
 
 	@Get("")
 	@SecuredAction("rbs.view")
 	public void view(final HttpServerRequest request) {
-		renderView(request);
+		// Choix de l'IHM (CCTP 51C — migration React) : défaut piloté par la conf `frontend-ui`
+		// (react|angular, défaut angular), override par requête `?ui=react|angular`.
+		// rbs.html = IHM AngularJS existante (défaut) ; rbs-react.html = nouvelle IHM React.
+		final String uiParam = request.getParam("ui");
+		final String ui = ("react".equals(uiParam) || "angular".equals(uiParam)) ? uiParam : frontendUi;
+		final String view = "react".equals(ui) ? "rbs-react.html" : "rbs.html";
+		renderView(request, new io.vertx.core.json.JsonObject(), view, null);
 
 		// Create event "access to application Rbs" and store it, for module "statistics"
 		eventStore.createAndStoreEvent(RbsEvent.ACCESS.name(), request);
