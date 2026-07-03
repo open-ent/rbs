@@ -1,13 +1,10 @@
-import { RouteObject, createBrowserRouter } from 'react-router-dom';
+import { RouteObject, createHashRouter } from 'react-router-dom';
 
 import { Agenda } from './screens/Agenda';
 import { Moderation } from './screens/Moderation';
 import { Resource } from './screens/Resource';
 import { Resources } from './screens/Resources';
 import { Root } from './screens/Root';
-
-// Réécrit à la racine du module (`/rbs` en prod). En dev, racine `/`.
-export const basename = import.meta.env.PROD ? '/rbs' : '/';
 
 export const routes: RouteObject[] = [
   {
@@ -22,4 +19,8 @@ export const routes: RouteObject[] = [
   },
 ];
 
-export const router = createBrowserRouter(routes, { basename });
+// Hash router : l'app est servie sous `/rbs` (route serveur unique `@Get("")`), le routage se fait
+// dans le fragment (`/rbs#/agenda`). Évite les 404 sur accès direct / rechargement (F5) des
+// sous-routes, que le `createBrowserRouter` provoquait faute de fallback SPA côté backend
+// (comme l'ancienne IHM AngularJS en `#/`). CCTP 51C.
+export const router = createHashRouter(routes);
