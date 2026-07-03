@@ -1,38 +1,94 @@
 name: dev-check-repository
 
-# Workflow legacy (Node 10 + Gulp + Gradle) incompatible avec ce module migré
-# (frontend React/Vite/pnpm + backend Maven). Le contrôle réel est assuré par
-# build-and-publish.yml. Déclencheur neutralisé pour éviter des échecs systématiques
-# au push ; reste lançable manuellement si besoin.
-on: workflow_dispatch
+# Contrôle de build à chaque push : frontend (Gulp via Node 10) + backend (Maven/JDK 8),
+# aligné sur build-and-publish.yml MAIS sans l'étape de publication. Remplace l'ancien
+# workflow legacy (Node 10 direct + Gradle) qui échouait systématiquement sur ce module
+# (projet Maven, pas Gradle ; deps nécessitant --legacy-peer-deps).
+on: [push]
+
+permissions:
+  contents: read
+  packages: read
 
 jobs:
-  build-node-test:
+  frontend:
+    name: Build Frontend (Gulp)
     runs-on: ubuntu-latest
-
-    container:
-      image: opendigitaleducation/node:10-alpine
-      options: --user root -v ${{ github.workspace }}:/home/node/:rw
-
     steps:
-      - uses: actions/checkout@v1
-      - name: Run npm install
-        run: npm install
-      - name: Run build node with Gulp
-        run: node_modules/gulp/bin/gulp.js build
-      - name: Run test
-        run: npm test
+      - uses: actions/checkout@v4
 
-  build-gradle-test:
+      - name: Build with Node 10 via Docker
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" \
+            -w /workspace \
+            --user root \
+            opendigitaleducation/node:10-alpine \
+            sh -c "npm install --legacy-peer-deps && node_modules/gulp/bin/gulp.js build"
+
+      - name: Upload frontend assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-assets
+          path: src/main/resources/
+          retention-days: 1
+
+  backend:
+    name: Build & Test (Maven)
     runs-on: ubuntu-latest
-
-    container:
-      image: gradle:4.5-alpine
-      options: --user root -v ${{ github.workspace }}:/home/gradle/:rw
-
+    needs: frontend
     steps:
-      - uses: actions/checkout@v1
-      - name: Run build gradle
-        run: gradle assemble -g gradle-user-home
-      - name: Run gradle test
-        run: gradle test  -g gradle-user-home --no-build-cache --rerun-tasks
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '8'
+          distribution: temurin
+          cache: maven
+
+      - name: Configure Maven pour GitHub Packages
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml << EOF
+          <settings>
+            <servers>
+              <server>
+                <id>github</id>
+                <username>$GITHUB_ACTOR</username>
+                <password>$GITHUB_TOKEN</password>
+              </server>
+            </servers>
+            <profiles>
+              <profile>
+                <id>github-packages</id>
+                <repositories>
+                  <repository>
+                    <id>github</id>
+                    <name>GitHub open-ent Packages</name>
+                    <url>https://maven.pkg.github.com/open-ent/entcore-v2</url>
+                    <releases><enabled>true</enabled></releases>
+                    <snapshots><enabled>true</enabled></snapshots>
+                  </repository>
+                </repositories>
+              </profile>
+            </profiles>
+            <activeProfiles>
+              <activeProfile>github-packages</activeProfile>
+            </activeProfiles>
+          </settings>
+          EOF
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+
+      - name: Download frontend assets
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-assets
+          path: src/main/resources/
+
+      - name: Build fat JAR
+        run: mvn clean package -DskipTests -B -DbuildNumber=${GITHUB_SHA::8} -DscmBranch=${GITHUB_REF_NAME}
+
+      - name: Run tests
+        run: mvn test -B
