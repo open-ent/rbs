@@ -1,6 +1,10 @@
 name: dev-check-repository
 
-on: [push]
+# Workflow legacy (Node 10 + Gulp + Gradle) incompatible avec ce module migré
+# (frontend React/Vite/pnpm + backend Maven). Le contrôle réel est assuré par
+# build-and-publish.yml. Déclencheur neutralisé pour éviter des échecs systématiques
+# au push ; reste lançable manuellement si besoin.
+on: workflow_dispatch
 
 jobs:
   build-node-test:
