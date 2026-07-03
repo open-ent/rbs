@@ -2,10 +2,10 @@
 
 import { BOOKING_STATUS } from './api';
 
-/** Formate une date ISO en « jj/mm/aaaa hh:mm » (locale FR). */
+/** Formate une date backend en « jj/mm/aaaa hh:mm » (heure locale FR). */
 export function formatDateTime(iso?: string): string {
   if (!iso) return '';
-  const d = new Date(iso);
+  const d = parseBackendDate(iso);
   return Number.isNaN(d.getTime())
     ? ''
     : d.toLocaleString('fr-FR', {
@@ -67,10 +67,10 @@ export function timeInputToSeconds(value: string): number {
   return Number(m[1]) * 3600 + Number(m[2]) * 60;
 }
 
-/** Formate une date ISO en « jj/mm/aaaa » (sans l'heure). */
+/** Formate une date backend en « jj/mm/aaaa » (jour local, sans l'heure). */
 export function formatDateOnly(iso?: string): string {
   if (!iso) return '';
-  const d = new Date(iso);
+  const d = parseBackendDate(iso);
   return Number.isNaN(d.getTime())
     ? ''
     : d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -106,16 +106,29 @@ export function yyyymmdd(d: Date): string {
   return `${d.getFullYear()}-${m}-${day}`;
 }
 
-/** Même jour civil (année/mois/jour) qu'une date ISO ? */
+/**
+ * Parse une date renvoyée par le backend RBS.
+ *
+ * Le backend renvoie des dates **en UTC mais sans indicateur de fuseau** (ex.
+ * `'2026-07-03T08:00:00.000'`). `new Date(...)` les interpréterait comme des heures **locales**,
+ * ce qui décale l'affichage (une réservation à 10:00 CEST s'affichait 08:00). On force donc
+ * l'interprétation **UTC** ; l'affichage et la comparaison se font ensuite en **heure locale**.
+ */
+export function parseBackendDate(iso: string): Date {
+  const hasTz = /[zZ]$|[+-]\d\d:?\d\d$/.test(iso);
+  return new Date(hasTz ? iso : `${iso}Z`);
+}
+
+/** Même jour civil (année/mois/jour) **local** qu'une date backend ? */
 export function isSameDay(iso: string, d: Date): boolean {
-  const b = new Date(iso);
+  const b = parseBackendDate(iso);
   return b.getFullYear() === d.getFullYear() && b.getMonth() === d.getMonth() && b.getDate() === d.getDate();
 }
 
-/** Heure « HH:mm » (locale FR) d'une date ISO. */
+/** Heure « HH:mm » en **heure locale** (FR) d'une date backend. */
 export function isoTime(iso?: string): string {
   if (!iso) return '';
-  const d = new Date(iso);
+  const d = parseBackendDate(iso);
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 }
 
