@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
 import { BOOKING_STATUS } from './api';
-import { formatDateTime, localInputToUnix, statusBadgeClass, statusLabel } from './utils';
+import {
+  bitstringToDayLabels,
+  dateInputToUnix,
+  formatDateTime,
+  localInputToUnix,
+  shortTime,
+  statusBadgeClass,
+  statusLabel,
+  timeInputToSeconds,
+} from './utils';
 
 describe('statusLabel', () => {
   it('mappe les statuts connus', () => {
@@ -42,5 +51,38 @@ describe('formatDateTime', () => {
   });
   it('formate une date ISO', () => {
     expect(formatDateTime('2026-07-15T08:00:00.000')).toMatch(/15\/07\/2026/);
+  });
+});
+
+describe('timeInputToSeconds', () => {
+  it('convertit HH:mm en secondes depuis minuit', () => {
+    expect(timeInputToSeconds('08:30')).toBe(8 * 3600 + 30 * 60);
+    expect(timeInputToSeconds('00:00')).toBe(0);
+  });
+  it('renvoie NaN pour une entrée invalide', () => {
+    expect(Number.isNaN(timeInputToSeconds(''))).toBe(true);
+    expect(Number.isNaN(timeInputToSeconds('8h'))).toBe(true);
+  });
+});
+
+describe('dateInputToUnix', () => {
+  it('convertit une date en secondes Unix entières', () => {
+    expect(Number.isInteger(dateInputToUnix('2026-09-01'))).toBe(true);
+    expect(Number.isNaN(dateInputToUnix(''))).toBe(true);
+  });
+});
+
+describe('shortTime', () => {
+  it('réduit HH:mm:ss en HH:mm', () => {
+    expect(shortTime('09:30:00')).toBe('09:30');
+    expect(shortTime()).toBe('');
+  });
+});
+
+describe('bitstringToDayLabels', () => {
+  it('liste les jours cochés (index 0 = dimanche)', () => {
+    expect(bitstringToDayLabels('0111110')).toBe('Lun, Mar, Mer, Jeu, Ven');
+    expect(bitstringToDayLabels('1000001')).toBe('Dim, Sam');
+    expect(bitstringToDayLabels('')).toBe('');
   });
 });

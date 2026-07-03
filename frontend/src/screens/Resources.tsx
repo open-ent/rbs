@@ -5,10 +5,12 @@ import { Link } from 'react-router-dom';
 
 import { api, Resource, ResourceType } from '../api';
 import { ResourceDialog } from './ResourceDialog';
+import { ShareDialog } from './ShareDialog';
 import { TypeDialog } from './TypeDialog';
 
 type TypeDialogState = { mode: 'new' } | { mode: 'edit'; type: ResourceType } | null;
 type ResourceDialogState = { typeId: number; resource?: Resource } | null;
+type ShareDialogState = { typeId: number; typeName: string } | null;
 
 /** Écran d'accueil : types + ressources, avec gestion (CRUD types/ressources). */
 export function Resources() {
@@ -20,6 +22,7 @@ export function Resources() {
 
   const [typeDialog, setTypeDialog] = useState<TypeDialogState>(null);
   const [resourceDialog, setResourceDialog] = useState<ResourceDialogState>(null);
+  const [shareDialog, setShareDialog] = useState<ShareDialogState>(null);
 
   const deleteTypeMut = useMutation({
     mutationFn: (id: number) => api.deleteType(id),
@@ -61,6 +64,9 @@ export function Resources() {
           resource={resourceDialog.resource}
           onClose={() => setResourceDialog(null)}
         />
+      )}
+      {shareDialog && (
+        <ShareDialog typeId={shareDialog.typeId} typeName={shareDialog.typeName} onClose={() => setShareDialog(null)} />
       )}
 
       <div className="d-flex align-items-center justify-content-between mb-16">
@@ -105,6 +111,9 @@ export function Resources() {
               <div className="d-flex gap-8">
                 <button type="button" className="btn btn-link p-0" onClick={() => setResourceDialog({ typeId: type.id })}>
                   {t('rbs.resource.add', { defaultValue: 'Ajouter une ressource' })}
+                </button>
+                <button type="button" className="btn btn-link p-0" onClick={() => setShareDialog({ typeId: type.id, typeName: type.name })}>
+                  {t('rbs.share', { defaultValue: 'Partager' })}
                 </button>
                 <button type="button" className="btn btn-link p-0" onClick={() => setTypeDialog({ mode: 'edit', type })}>
                   {t('rbs.edit', { defaultValue: 'Modifier' })}

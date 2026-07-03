@@ -5,6 +5,7 @@ import { Link, useParams } from 'react-router-dom';
 
 import { api, Slot } from '../api';
 import { formatDateTime, localInputToUnix, statusBadgeClass, statusLabel } from '../utils';
+import { AvailabilityDialog } from './AvailabilityDialog';
 
 const IANA = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris';
 
@@ -46,6 +47,7 @@ export function Resource() {
   const [end, setEnd] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [formError, setFormError] = useState('');
+  const [showAvailability, setShowAvailability] = useState(false);
   // Périodique
   const [periodic, setPeriodic] = useState(false);
   const [periodicity, setPeriodicity] = useState(1);
@@ -137,6 +139,7 @@ export function Resource() {
 
   return (
     <div>
+      {showAvailability && <AvailabilityDialog resourceId={id} onClose={() => setShowAvailability(false)} />}
       <p>
         <Link to="/">← {t('rbs.back.to.resources', { defaultValue: 'Retour aux ressources' })}</Link>
       </p>
@@ -144,12 +147,17 @@ export function Resource() {
       {resourceQuery.isLoading && <p>{t('rbs.loading', { defaultValue: 'Chargement…' })}</p>}
       {resource && (
         <>
-          <div className="d-flex align-items-center gap-8 mb-4">
-            <span
-              aria-hidden
-              style={{ display: 'inline-block', width: 14, height: 14, borderRadius: 3, background: resource.color ?? '#4bafd5' }}
-            />
-            <h1 className="m-0">{resource.name}</h1>
+          <div className="d-flex align-items-center justify-content-between gap-8 mb-4">
+            <div className="d-flex align-items-center gap-8">
+              <span
+                aria-hidden
+                style={{ display: 'inline-block', width: 14, height: 14, borderRadius: 3, background: resource.color ?? '#4bafd5' }}
+              />
+              <h1 className="m-0">{resource.name}</h1>
+            </div>
+            <button type="button" className="btn btn-secondary" onClick={() => setShowAvailability(true)}>
+              {t('rbs.availability.title', { defaultValue: 'Disponibilités' })}
+            </button>
           </div>
           {resource.description && <p className="text-muted">{resource.description}</p>}
           {resource.validation && (

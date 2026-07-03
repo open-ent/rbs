@@ -109,6 +109,58 @@ export interface ResourceInput {
   color?: string;
 }
 
+/** Disponibilité (ou indisponibilité) d'une ressource. Réponse : dates ISO, heures « HH:mm:ss », jours en bitstring. */
+export interface Availability {
+  id: number;
+  resource_id: number;
+  start_date: string;
+  end_date: string;
+  start_time: string;
+  end_time: string;
+  days: string; // bitstring, index 0 = dimanche
+  quantity: number;
+  is_unavailability: boolean;
+}
+
+/**
+ * Corps de POST /rbs/resource/:id/availability (cf. jsonschema/createAvailability.json).
+ * ⚠️ Le modèle backend lit `resource_id` et `is_unavailability` dans le CORPS (le path :id ne suffit pas).
+ * `start_time`/`end_time` = secondes depuis minuit ; `days` = 7 booléens (index 0 = dimanche).
+ */
+export interface CreateAvailabilityBody {
+  resource_id: number;
+  is_unavailability: boolean;
+  start_date: number;
+  end_date: number;
+  start_time: number;
+  end_time: number;
+  iana: string;
+  days: boolean[];
+  quantity: number;
+}
+
+// ── Partage (modèle entcore, identique à forum) ──────────────────────────────
+export interface ShareAction {
+  name: string[];
+  displayName: string;
+  type: string;
+}
+export interface ShareVisible {
+  id: string;
+  name?: string;
+  username?: string;
+}
+export interface ShareJson {
+  actions: ShareAction[];
+  groups: { visibles: ShareVisible[]; checked: Record<string, string[]> };
+  users: { visibles: ShareVisible[]; checked: Record<string, string[]> };
+}
+export interface ShareBatch {
+  users: Record<string, string[]>;
+  groups: Record<string, string[]>;
+  bookmarks: Record<string, string[]>;
+}
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) throw new Error(String(res.status));
   const text = await res.text();
@@ -234,6 +286,29 @@ export const deleteResource = async (id: number): Promise<void> => {
   if (!res.ok && res.status !== 204) throw new Error(String(res.status));
 };
 
+// ── Disponibilités ────────────────────────────────────────────────────────────
+export const getResourceAvailability = async (resourceId: number): Promise<Availability[]> =>
+  json<Availability[]>(await fetch(`/rbs/resource/${resourceId}/availability`, base));
+
+export const createAvailability = async (resourceId: number, body: CreateAvailabilityBody): Promise<Availability> =>
+  json<Availability>(
+    await fetch(`/rbs/resource/${resourceId}/availability`, { ...base, method: 'POST', headers: jsonHeaders, body: JSON.stringify(body) }),
+  );
+
+export const deleteAvailability = async (resourceId: number, availabilityId: number): Promise<void> => {
+  const res = await fetch(`/rbs/resource/${resourceId}/availability/${availabilityId}`, { ...base, method: 'DELETE' });
+  if (!res.ok && res.status !== 204) throw new Error(String(res.status));
+};
+
+// ── Partage d'un type de ressource (batch, comme forum) ───────────────────────
+export const getTypeShare = async (typeId: number): Promise<ShareJson> =>
+  json<ShareJson>(await fetch(`/rbs/share/json/${typeId}`, base));
+
+export const shareTypeBatch = async (typeId: number, batch: ShareBatch): Promise<void> => {
+  const res = await fetch(`/rbs/share/resource/${typeId}`, { ...base, method: 'PUT', headers: jsonHeaders, body: JSON.stringify(batch) });
+  if (!res.ok) throw new Error(String(res.status));
+};
+
 export const api = {
   getTypes,
   getResources,
@@ -250,4 +325,9 @@ export const api = {
   createResource,
   updateResource,
   deleteResource,
+  getResourceAvailability,
+  createAvailability,
+  deleteAvailability,
+  getTypeShare,
+  shareTypeBatch,
 };
