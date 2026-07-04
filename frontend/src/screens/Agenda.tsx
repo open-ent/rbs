@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 
 import { api } from '../api';
 import { hourSlots, isoTime, isSameDay, localHour, startOfWeek, statusBadgeClass, weekDays, yyyymmdd } from '../utils';
+import { ExportDialog } from './ExportDialog';
 
 const DAY_LABELS = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi'];
 const SLOTS = hourSlots(7, 20);
@@ -17,6 +18,7 @@ export function Agenda() {
   const { t } = useTranslation(['rbs', 'common']);
   const [monday, setMonday] = useState(() => startOfWeek(new Date()));
   const [resourceId, setResourceId] = useState<number | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const days = useMemo(() => weekDays(monday).slice(0, 5), [monday]);
   const start = yyyymmdd(monday);
@@ -48,11 +50,16 @@ export function Agenda() {
 
   return (
     <div>
+      {exporting && <ExportDialog onClose={() => setExporting(false)} />}
       <div className="d-flex align-items-center justify-content-between mb-16 flex-wrap gap-8">
         <h1 className="m-0">{t('rbs.agenda.title', { defaultValue: 'Réservation de ressources' })}</h1>
         <div className="d-flex gap-8">
           <Link to="/resources" className="btn btn-primary">{t('rbs.new.booking', { defaultValue: 'Nouvelle réservation' })}</Link>
           <Link to="/resources" className="btn btn-secondary">{t('rbs.manage.resources', { defaultValue: 'Gérer les ressources' })}</Link>
+          <button type="button" className="btn btn-secondary" onClick={() => setExporting(true)}>
+            {t('rbs.export.title', { defaultValue: 'Exporter' })}
+          </button>
+          <Link to="/moderation" className="btn btn-secondary">{t('rbs.moderation.title', { defaultValue: 'Modération des réservations' })}</Link>
         </div>
       </div>
 
