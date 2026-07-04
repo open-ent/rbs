@@ -132,6 +132,22 @@ export function isoTime(iso?: string): string {
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 }
 
+/** Heure locale (0-23) d'une date backend ; -1 si illisible. */
+export function localHour(iso?: string): number {
+  if (!iso) return -1;
+  const d = parseBackendDate(iso);
+  return Number.isNaN(d.getTime()) ? -1 : d.getHours();
+}
+
+/** Créneaux horaires [début,fin[ d'une journée (par défaut 7h→20h) pour la grille de planning. */
+export function hourSlots(from = 7, to = 20): Array<{ from: number; to: number; label: string }> {
+  const slots = [];
+  for (let h = from; h < to; h += 1) {
+    slots.push({ from: h, to: h + 1, label: `${String(h).padStart(2, '0')}h00 - ${String(h + 1).padStart(2, '0')}h00` });
+  }
+  return slots;
+}
+
 /** Libellés FR des jours cochés d'un bitstring (index 0 = dimanche). */
 export function bitstringToDayLabels(bits?: string): string {
   if (!bits) return '';
