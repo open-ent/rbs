@@ -40,11 +40,12 @@ public class DisplayController extends BaseController {
 	private EventStore eventStore;
 	private enum RbsEvent { ACCESS }
 
-	/** IHM par défaut : "react" (nouvelle) ou "angular" (ancienne), piloté par la conf `frontend-ui`.
+	/** IHM par défaut : "react" (nouvelle) ou "angular" (ancienne), pilotée par la conf `frontend-ui`
+	 *  (bloc du module dans ent-core.yaml, alimentée par FRONTEND_UI_DEFAULT).
 	 *  Défaut "react" : la migration React (CCTP 51C) a la parité fonctionnelle (réservations
 	 *  simple/périodique, modération, CRUD types/ressources, disponibilités, partage, export, agenda).
-	 *  NB : la génération springboard retire les clés de conf inconnues (dont `frontend-ui`) →
-	 *  c'est ce défaut Java qui pilote réellement ; repli/override par `?ui=react|angular`. */
+	 *  NB : launcher-next conserve la clé `frontend-ui` (bloc `config:` stocké verbatim) ; le fallback
+	 *  Java "react" ne s'applique que si la conf est absente. Repli/override par `?ui=react|angular`. */
 	private String frontendUi = "react";
 
 	@Override
