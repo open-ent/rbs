@@ -58,6 +58,17 @@ jobs:
           mkdir -p ../src/main/resources/public
           cp -r dist/public/. ../src/main/resources/public/
 
+      # Fat-mod « dual » : le module sert l'IHM AngularJS OU React selon la conf `frontend-ui`
+      # (override `?ui=react|angular`). Si une seule des deux est dans le jar, la moitie des URL
+      # rend un 500 en prod. On echoue donc ICI plutot qu'au runtime.
+      - name: Verify build outputs (IHM Angular + React)
+        run: |
+          test -f src/main/resources/view/rbs.html           || { echo "::error::view/rbs.html manquant (IHM AngularJS)"; exit 1; }
+          test -f src/main/resources/view/rbs-react.html     || { echo "::error::view/rbs-react.html manquant (IHM React)"; exit 1; }
+          test -f src/main/resources/public/index.js         || { echo "::error::public/index.js manquant (bundle React)"; exit 1; }
+          test -f src/main/resources/public/index.css        || { echo "::error::public/index.css manquant (feuille de style React)"; exit 1; }
+          test -f src/main/resources/public/js/behaviours.js || { echo "::error::public/js/behaviours.js manquant (behaviours AngularJS)"; exit 1; }
+
       - name: Upload frontend assets
         uses: actions/upload-artifact@v4
         with:
@@ -177,24 +188,85 @@ jobs:
             -Durl="https://maven.pkg.github.com/${{ github.repository }}" \
             -B
 
+      # Publish rct-nexus : module DUAL (Angular + React dans le meme fat-mod). Le launcher
+      # (openent-monolithe) tire les mods depuis nexus -> sans ce step, la version -patched
+      # n'y est jamais rafraichie. delete-then-deploy car maven-releases refuse d'ecraser une
+      # release existante : sans la suppression prealable le deploy renvoie 400/409 et, avec
+      # `continue-on-error`, echouait EN SILENCE (nexus restait sur l'ancien jar).
+      - name: Configure Maven for rct-nexus
+        if: startsWith(github.ref, 'refs/tags/') || endsWith(github.ref, '-patched') || endsWith(github.ref, '-patched-dev')
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml << 'EOF'
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                    xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
+                                        https://maven.apache.org/xsd/settings-1.0.0.xsd">
+            <servers>
+              <server>
+                <id>github</id>
+                <username>${env.GITHUB_ACTOR}</username>
+                <password>${env.GITHUB_TOKEN}</password>
+              </server>
+              <server>
+                <id>pt-releases</id>
+                <username>${env.NEXUS_USER}</username>
+                <password>${env.NEXUS_PASSWORD}</password>
+              </server>
+            </servers>
+            <profiles>
+              <profile>
+                <id>github-packages</id>
+                <repositories>
+                  <repository>
+                    <id>github</id>
+                    <name>GitHub open-ent Packages</name>
+                    <url>https://maven.pkg.github.com/open-ent/entcore-v2</url>
+                    <releases><enabled>true</enabled></releases>
+                    <snapshots><enabled>true</enabled></snapshots>
+                  </repository>
+                </repositories>
+              </profile>
+            </profiles>
+            <activeProfiles>
+              <activeProfile>github-packages</activeProfile>
+            </activeProfiles>
+          </settings>
+          EOF
+
       - name: Publish fat JAR to rct-nexus
-        continue-on-error: true
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || endsWith(github.ref, '-patched') || endsWith(github.ref, '-patched-dev')
         env:
           NEXUS_USER: ${{ secrets.NEXUS_USER }}
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
         run: |
-          cat > /tmp/nx-settings.xml <<EOF
-          <settings><servers><server><id>pt-releases</id><username>${NEXUS_USER}</username><password>${NEXUS_PASSWORD}</password></server></servers></settings>
-          EOF
+          set -euo pipefail
+          GROUP_ID=$(mvn help:evaluate -Dexpression=project.groupId -q -DforceStdout)
+          ARTIFACT_ID=$(mvn help:evaluate -Dexpression=project.artifactId -q -DforceStdout)
+          VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
           FAT_JAR=$(ls target/*-fat.jar 2>/dev/null | head -1)
           if [ -z "${FAT_JAR}" ]; then echo "::error::Fat JAR not found"; exit 1; fi
-          FAT_ABS=$(realpath "${FAT_JAR}")
-          BASE=$(basename "${FAT_JAR}" -fat.jar)
-          GROUP_ID=${BASE%%~*}; REST=${BASE#*~}; ARTIFACT_ID=${REST%%~*}; VERSION=${REST#*~}
-          echo "Deploying ${GROUP_ID}:${ARTIFACT_ID}:${VERSION}:fat -> rct-nexus"
-          cd /tmp
-          mvn deploy:deploy-file -s /tmp/nx-settings.xml -Dfile="${FAT_ABS}" -DgroupId="${GROUP_ID}" -DartifactId="${ARTIFACT_ID}" -Dversion="${VERSION}" -Dclassifier=fat -Dpackaging=jar -DrepositoryId=pt-releases -Durl="https://rct-nexus.tech.fr/repository/maven-releases/" -B
+          NEXUS="https://rct-nexus.tech.fr"
+          echo "Recherche d'un composant existant ${GROUP_ID}:${ARTIFACT_ID}:${VERSION} sur maven-releases…"
+          IDS=$(curl -sf -u "${NEXUS_USER}:${NEXUS_PASSWORD}" \
+            "${NEXUS}/service/rest/v1/search?repository=maven-releases&maven.groupId=${GROUP_ID}&maven.artifactId=${ARTIFACT_ID}&version=${VERSION}" \
+            | jq -r '.items[].id' || true)
+          for id in ${IDS}; do
+            echo "Suppression du composant existant ${id}"
+            curl -sf -u "${NEXUS_USER}:${NEXUS_PASSWORD}" -X DELETE "${NEXUS}/service/rest/v1/components/${id}" || true
+          done
+          mvn deploy:deploy-file \
+            -Dfile="${FAT_JAR}" \
+            -DgroupId="${GROUP_ID}" \
+            -DartifactId="${ARTIFACT_ID}" \
+            -Dversion="${VERSION}" \
+            -Dclassifier=fat \
+            -Dpackaging=jar \
+            -DrepositoryId=pt-releases \
+            -Durl="${NEXUS}/repository/maven-releases/" \
+            -B
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
