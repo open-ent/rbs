@@ -510,6 +510,13 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
             //fixme Why model.recordedSelections.firstResourceType = true;
             model.recordedSelections.allResources = true;
             $scope.currentResourceType = undefined;
+            // Sortie du mode gestion : restaurer les boutons « Nouvelle réservation » et « Export »
+            $scope.display.admin = false;
+            $scope.display.create = $scope.canCreateBooking();
+            // showManage() a laissé display.list à undefined -> défaut = calendrier
+            if ($scope.display.list === undefined) {
+                $scope.display.list = false;
+            }
             $scope.resetSort();
             model.refresh($scope.display.list);
             template.open('main', 'main-view');
