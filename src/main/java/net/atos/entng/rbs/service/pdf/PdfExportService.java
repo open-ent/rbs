@@ -52,8 +52,6 @@ public class PdfExportService extends AbstractVerticle implements Handler<Messag
 
 	@Override
 	public void handle(Message<JsonObject> message) {
-		System.out.println("1 INSIDE HANDLE() = " + message.body());
-
 		String action = message.body().getString("action", "");
 		JsonObject exportResponse = message.body().getJsonObject("data", new JsonObject());
 		String scheme = message.body().getString("scheme", "");
@@ -100,7 +98,14 @@ public class PdfExportService extends AbstractVerticle implements Handler<Messag
 				JsonObject preparedData = prepareData(exportResponse, host, locale, userTimeZone);
 
 				String filledTemplate = fillTemplate(result.result().toString("UTF-8"), preparedData);
-				final String baseUrl = scheme + "://" + host + "/assets/themes/" + skinsConfig.getString(host) + "/img/";
+				// skinsConfig (shared data "skins") peut être null sur certaines plateformes
+				// -> ne pas NPE : le baseUrl ne sert qu'à résoudre les images du thème dans le PDF.
+				String skin = (skinsConfig != null) ? skinsConfig.getString(host) : null;
+				if (skin == null || skin.isEmpty()) {
+					skin = "default";
+					LOG.warn("skinsConfig null/vide pour l'hôte " + host + " : fallback thème \"default\" pour les images du PDF");
+				}
+				final String baseUrl = scheme + "://" + host + "/assets/themes/" + skin + "/img/";
 				JsonObject actionObject = new JsonObject();
 				actionObject
 						.put("content", filledTemplate.getBytes())
