@@ -464,5 +464,6 @@
   "rbs.validate": "Valider",
   "shared.resources": "Ressources partagées",
   "to": "à",
-  "type.form.validation.required": "Les demandes de réservation doivent être validées"
+  "type.form.validation.required": "Les demandes de réservation doivent être validées",
+  "rbs.moderation.title": "Modération"
 }

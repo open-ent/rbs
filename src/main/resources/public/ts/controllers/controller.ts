@@ -265,7 +265,12 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
         };
 
         $scope.hasAnyBookingRight = function (booking) {
-            return booking.resource.myRights.process || booking.resource.myRights.manage || booking.owner === model.me.userId;
+            // L'auteur peut toujours agir sur sa réservation : on teste le propriétaire EN PREMIER,
+            // avant myRights qui peut être absent/vide sur une ressource où l'utilisateur n'a que
+            // « Réserver » (sinon l'accès à .process levait une erreur -> ng-if faux -> pas de case).
+            return booking.owner === model.me.userId
+                || (booking.resource && booking.resource.myRights
+                    && (booking.resource.myRights.process || booking.resource.myRights.manage));
         }
 
         // Initialization
@@ -468,6 +473,8 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
                 $scope.initMain();
             }
             $scope.display.admin = false;
+            $scope.display.moderation = false;
+            delete $scope.bookings.filters.unprocessed;
             $scope.display.list = true;
             $scope.bookings.filters.booking = true;
             $scope.bookings.syncForShowList();
@@ -481,6 +488,8 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
                 $scope.initMain();
             }
             $scope.display.admin = false;
+            $scope.display.moderation = false;
+            delete $scope.bookings.filters.unprocessed;
             $scope.display.list = false;
             $scope.bookings.filters.booking = undefined;
             $scope.bookings.applyFilters();
@@ -489,9 +498,24 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
             $scope.safeApply();
         };
 
+        // Onglet Modération : liste des réservations à traiter (droit modérateur `process`).
+        $scope.showModeration = function () {
+            $scope.display.admin = false;
+            $scope.display.list = true;
+            $scope.display.moderation = true;
+            $scope.bookings.filters.booking = true;
+            $scope.bookings.filters.unprocessed = true;
+            delete $scope.bookings.filters.mine;
+            $scope.bookings.syncForShowList();
+            $scope.bookings.applyFilters();
+            template.open('bookings', 'main-list');
+            $scope.safeApply();
+        };
+
         $scope.showManage = function () {
             $scope.display.list = undefined;
             $scope.display.admin = true;
+            $scope.display.moderation = false;
             $scope.resourceTypes.deselectAllResources();
 
             var processableResourceTypes = _.filter(
@@ -512,6 +536,7 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
             $scope.currentResourceType = undefined;
             // Sortie du mode gestion : restaurer les boutons « Nouvelle réservation » et « Export »
             $scope.display.admin = false;
+            $scope.display.moderation = false;
             $scope.display.create = $scope.canCreateBooking();
             // showManage() a laissé display.list à undefined -> défaut = calendrier
             if ($scope.display.list === undefined) {
