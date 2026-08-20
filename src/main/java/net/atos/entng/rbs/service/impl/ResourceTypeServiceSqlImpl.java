@@ -105,6 +105,22 @@ public class ResourceTypeServiceSqlImpl implements ResourceTypeService {
 
 
 	@Override
+	public void listAllForStructure(final String structureId, final Handler<Either<String, JsonArray>> handler) {
+		StringBuilder query = new StringBuilder();
+		JsonArray values = new JsonArray();
+
+		query.append("SELECT t.* FROM rbs.resource_type AS t WHERE t.school_id = ? ORDER BY t.name");
+		values.add(structureId);
+
+		Sql.getInstance().prepared(query.toString(), values, new Handler<Message<JsonObject>>() {
+			@Override
+			public void handle(Message<JsonObject> event) {
+				handler.handle(validResult(event));
+			}
+		});
+	}
+
+	@Override
 	public void getModeratorsIds(final String typeId, final Handler<Either<String, JsonArray>> handler) {
 
 		StringBuilder query = new StringBuilder();
