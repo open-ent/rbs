@@ -193,8 +193,25 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 		values.add(toSQLTimestamp(slot.getStartUTC()))
 				.add(toSQLTimestamp(slot.getEndUTC()));
 
-		// Returning result
-		query.append(" RETURNING id, quantity, status, to_char(start_date, '").append(DATE_FORMAT)
+		// Empêche de réserver une ressource déjà prise sur un créneau qui chevauche celui demandé.
+		// RBS ne l'a jamais vérifié jusqu'ici (LOCK_BOOKING_QUERY protège seulement contre les
+		// écritures concurrentes, pas contre le chevauchement lui-même) — deux réservations
+		// pouvaient coexister sans erreur ni statut particulier. REFUSED exclu : une réservation
+		// refusée ne bloque plus le créneau. 0 ligne insérée ici = conflit ; le contrôleur HTTP
+		// (getBookingCreationResponse) traite déjà ce cas comme un 409 (résultat Right vide).
+		query.append(" WHERE NOT EXISTS (")
+				.append("SELECT 1 FROM rbs.booking b")
+				.append(" WHERE b.resource_id = ? AND b.status <> ?")
+				.append(" AND b.start_date < ? AND b.end_date > ?")
+				.append(")");
+		values.add(rId).add(REFUSED.status())
+				.add(toSQLTimestamp(slot.getEndUTC()))
+				.add(toSQLTimestamp(slot.getStartUTC()));
+
+		// Returning result — resource_id inclus : permet à l'appelant (pont EDT/diary) de savoir
+		// PRÉCISÉMENT quelles ressources demandées ont vraiment été réservées, en comparant à la
+		// liste demandée (une ressource absente de la réponse = bloquée par le WHERE NOT EXISTS).
+		query.append(" RETURNING id, resource_id, quantity, status, to_char(start_date, '").append(DATE_FORMAT)
 				.append("') AS start_date, to_char(end_date, '").append(DATE_FORMAT).append("') AS end_date");
 
 		return new JsonObject().put("query", query).put("values", values);
