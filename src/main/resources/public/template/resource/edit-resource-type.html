@@ -26,6 +26,26 @@
 				</label>
 			</div>
 
+			<div class="row">
+				<label class="three cell"><i18n>rbs.resourcetype.edit.category.label</i18n></label>
+				<input type="text" list="resource-type-categories" class="nine cell"
+					   i18n-placeholder="rbs.resourcetype.edit.category.placeholder"
+					   ng-model="editedResourceType.category" input-guard/>
+				<datalist id="resource-type-categories">
+					<option value="GENERAL"></option>
+					<option value="GYMNASE"></option>
+					<option value="LABO"></option>
+					<option value="TECHNO"></option>
+					<option value="MUSIQUE"></option>
+					<option value="ARTS"></option>
+					<option value="CDI"></option>
+					<option value="AMPHITHEATRE"></option>
+				</datalist>
+				<p class="info nine cell offset-three">
+					<i18n>rbs.resourcetype.edit.category.help</i18n>
+				</p>
+			</div>
+
 			<hr/>
 			<div class="row">
 				<label class="three cell"><i18n>rbs.resourcetype.edit.color.label</i18n></label>

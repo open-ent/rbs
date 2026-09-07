@@ -621,7 +621,8 @@ ResourceType.prototype.toJSON = function () {
         name: this.name,
         validation: this.validation,
         color: this.color,
-        extendcolor: this.extendcolor
+        extendcolor: this.extendcolor,
+        category: this.category || 'GENERAL'
     };
     // Send school id only at creation
     if (!this.id) {

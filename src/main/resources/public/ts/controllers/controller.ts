@@ -1274,6 +1274,61 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
             template.open('resources', 'resource/edit-resource-type');
         };
 
+        // Types de salles courants, pour éviter à un établissement de tout ressaisir à la main.
+        // La catégorie est du texte libre côté serveur (cf. jsonschema/createResourceType.json) :
+        // ce catalogue n'est qu'une suggestion de départ, pas une liste fermée.
+        $scope.defaultResourceTypesCatalog = [
+            { name: 'Gymnase', category: 'GYMNASE' },
+            { name: 'Terrain de sport / Stade', category: 'GYMNASE' },
+            { name: 'Laboratoire de Physique-Chimie', category: 'LABO' },
+            { name: 'Laboratoire de SVT', category: 'LABO' },
+            { name: 'CDI', category: 'CDI' },
+            { name: 'Amphithéâtre', category: 'AMPHITHEATRE' },
+            { name: 'Salle informatique', category: 'TECHNO' },
+            { name: 'Salle de musique', category: 'MUSIQUE' },
+            { name: "Salle d'arts plastiques", category: 'ARTS' }
+        ];
+
+        $scope.createDefaultResourceTypes = function () {
+            if (!$scope.selectedStructure) {
+                return;
+            }
+            var existingNames = _.map($scope.selectedStructure.types || [], function (t) {
+                return t.name;
+            });
+            var toCreate = _.filter($scope.defaultResourceTypesCatalog, function (item) {
+                return existingNames.indexOf(item.name) === -1;
+            });
+            if (toCreate.length === 0) {
+                return;
+            }
+
+            $scope.currentErrors = [];
+            $scope.display.processing = true;
+            var remaining = toCreate.length;
+            var onOneDone = function () {
+                remaining--;
+                if (remaining === 0) {
+                    $scope.display.processing = undefined;
+                    model.refreshRessourceType();
+                    $scope.safeApply();
+                }
+            };
+            toCreate.forEach(function (item) {
+                var type = new RBS.ResourceType();
+                type.name = item.name;
+                type.category = item.category;
+                type.validation = false;
+                type.color = model.getNextColor();
+                type.structure = $scope.selectedStructure;
+                type.slotprofile = null;
+                type.save(onOneDone, function (e) {
+                    $scope.currentErrors.push(e);
+                    onOneDone();
+                });
+            });
+        };
+
         $scope.newResource = function () {
             $scope.isCreation = true;
             $scope.display.processing = undefined;
