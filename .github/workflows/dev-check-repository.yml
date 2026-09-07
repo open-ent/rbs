@@ -88,7 +88,7 @@ jobs:
           path: src/main/resources/
 
       - name: Build fat JAR
-        run: mvn clean package -DskipTests -B -DbuildNumber=${GITHUB_SHA::8} -DscmBranch=${GITHUB_REF_NAME}
+        run: mvn clean package -Dmaven.test.skip=true -B -DbuildNumber=${GITHUB_SHA::8} -DscmBranch=${GITHUB_REF_NAME}
 
       - name: Run tests
         run: mvn test -B

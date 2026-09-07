@@ -147,7 +147,7 @@ jobs:
             *-patched) echo "entcore verrouillé sur $ENTCORE_EFF" ;;
             *) echo "::error::entcore « $ENTCORE_EFF » n'est pas une version -patched — la plateforme tourne org.entcore~*~-patched. Corriger entCoreVersion dans le pom, ou passer l'input entcore_version."; exit 1 ;;
           esac
-          mvn clean package -DskipTests -B -DentCoreVersion="$ENTCORE_EFF" -DbuildNumber=${GITHUB_SHA::8} -DscmBranch=${GITHUB_REF_NAME}
+          mvn clean package -Dmaven.test.skip=true -B -DentCoreVersion="$ENTCORE_EFF" -DbuildNumber=${GITHUB_SHA::8} -DscmBranch=${GITHUB_REF_NAME}
         env:
           ENTCORE_VERSION: ${{ github.event.inputs.entcore_version }}
 
