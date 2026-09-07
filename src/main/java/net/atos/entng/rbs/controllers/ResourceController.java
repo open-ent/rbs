@@ -66,6 +66,8 @@ public class ResourceController extends ControllerHelper {
 	static final String RESOURCE_NAME = "resource";
 	private static final String RESOURCE_AVAILABLE_EVENT_TYPE = RBS_NAME + "_RESOURCE_AVAILABLE";
 	private static final String RESOURCE_UNAVAILABLE_EVENT_TYPE = RBS_NAME + "_RESOURCE_UNAVAILABLE";
+	// Même valeur que le dernier recours du front (models.ts: LAST_DEFAULT_COLOR)
+	private static final String DEFAULT_COLOR = "#4bafd5";
 
 	private static final String SCHEMA_RESOURCE_CREATE = "createResource";
 	private static final String SCHEMA_RESOURCE_UPDATE = "updateResource";
@@ -158,6 +160,13 @@ public class ResourceController extends ControllerHelper {
 							}
 							String resourceTypeId = request.params().get("id");
 							resource.put("type_id", resourceTypeId);
+							// Une ressource sans couleur (null) ne peut plus jamais être modifiée ensuite
+							// (PUT rejeté par le schéma createResource/updateResource) : on force une
+							// couleur par défaut à la création plutôt que de laisser passer null.
+							String color = resource.getString("color");
+							if (color == null || color.isEmpty()) {
+								resource.put("color", DEFAULT_COLOR);
+							}
 							final Handler<Either<String, JsonObject>> handler = notEmptyResponseHandler(request);
 							resourceService.createResource(resource, user, eventHelper.onCreateResource(request, RESOURCE_NAME, handler));
 						}
