@@ -28,7 +28,7 @@
 			"minimum": 0
 		},
 		"color": {
-			"type": "string"
+			"type": ["string", "null"]
 		},
 		"validation": {
 			"type": "boolean"
