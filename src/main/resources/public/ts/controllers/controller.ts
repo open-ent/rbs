@@ -1280,8 +1280,8 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
         $scope.defaultResourceTypesCatalog = [
             { name: 'Gymnase', category: 'GYMNASE' },
             { name: 'Terrain de sport / Stade', category: 'GYMNASE' },
-            { name: 'Laboratoire de Physique-Chimie', category: 'LABO' },
-            { name: 'Laboratoire de SVT', category: 'LABO' },
+            { name: 'Laboratoire de Physique-Chimie', category: 'LABO_PHYSIQUE_CHIMIE' },
+            { name: 'Laboratoire de SVT', category: 'LABO_SVT' },
             { name: 'CDI', category: 'CDI' },
             { name: 'Amphithéâtre', category: 'AMPHITHEATRE' },
             { name: 'Salle informatique', category: 'TECHNO' },
