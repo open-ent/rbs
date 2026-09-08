@@ -21,11 +21,14 @@
 			<input class="nine cell" type="text" i18n-placeholder="rbs.resource.edit.name.placeholder" ng-model="editedResource.name" required input-guard/>
 		</div>
 
-		<!-- prevent interacting with checkbox since it is auto set with type of resource -->
+		<!-- rbs.resource a sa propre colonne "validation" (indépendante de resource_type.validation,
+		     migration 011-rbs.sql) : chaque ressource peut avoir son propre réglage, pré-rempli
+		     depuis le type à la création (cf. newResource() dans controller.ts) mais modifiable
+		     ensuite ici — ce n'était pas le cas avant (checkbox verrouillée en ng-disabled). -->
 		<div class="row">
 			<label class="nine cell right-magnet">
-				<input type="checkbox" data-ng-model="editedResource.validation" ng-disabled="true"/>
-				<span style="cursor: default">
+				<input type="checkbox" data-ng-model="editedResource.validation" input-guard/>
+				<span>
 					<i18n>type.form.validation.required</i18n>
 				</span>
 			</label>

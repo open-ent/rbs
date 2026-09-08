@@ -1,0 +1,56 @@
+<div class="row" guard-root="createDefaultResourceTypesRoot">
+	<h2><i18n>rbs.resourcetype.defaults.title</i18n></h2>
+
+	<article class="twelve cell">
+		<p class="info"><i18n>rbs.resourcetype.defaults.help</i18n></p>
+
+		<table class="twelve cell">
+			<thead>
+				<tr>
+					<th></th>
+					<th><i18n>rbs.resourcetype.defaults.name</i18n></th>
+					<th><i18n>rbs.resourcetype.defaults.quantity</i18n></th>
+				</tr>
+			</thead>
+			<tbody>
+				<tr ng-repeat="item in defaultTypesSelection" ng-class="{ disabled: item.alreadyExists }">
+					<td>
+						<input type="checkbox" ng-model="item.checked" ng-disabled="item.alreadyExists" input-guard/>
+					</td>
+					<td>
+						[[item.name]]
+						<span class="info" ng-if="item.alreadyExists">(<i18n>rbs.resourcetype.defaults.already.exists</i18n>)</span>
+					</td>
+					<td>
+						<input type="number" min="1" max="20" ng-model="item.quantity"
+							   ng-disabled="!item.checked || item.alreadyExists" input-guard/>
+					</td>
+				</tr>
+			</tbody>
+		</table>
+
+		<hr/>
+
+		<div class="row">
+			<label class="nine cell right-magnet">
+				<i18n>rbs.resourcetype.defaults.custom.label</i18n>
+			</label>
+		</div>
+		<div class="row">
+			<textarea rows="3" class="twelve cell"
+					  i18n-placeholder="rbs.resourcetype.defaults.custom.placeholder"
+					  ng-model="customTypesInput" input-guard></textarea>
+			<p class="info"><i18n>rbs.resourcetype.defaults.custom.help</i18n></p>
+		</div>
+
+		<div class="warning" ng-repeat="actionError in currentErrors" translate content="[[actionError.error]]">
+		</div>
+
+		<div class="row">
+			<button class="right-magnet" reset-guard="confirmCreateDefaultResourceTypes()" ng-if="display.processing !== true"><i18n>rbs.save</i18n></button>
+			<input type="button" class="cancel right-magnet" i18n-value="cancel" navigation-trigger="closeResourceType()" ng-if="display.processing !== true"/>
+
+			<button class="right-magnet cancel disabled" disabled ng-if="display.processing === true"><i18n>rbs.processing</i18n></button>
+		</div>
+	</article>
+</div>

@@ -1289,6 +1289,9 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
             { name: "Salle d'arts plastiques", category: 'ARTS' }
         ];
 
+        // Ouvre l'écran de sélection (cases à cocher + quantité) au lieu de créer directement :
+        // certaines catégories (labo, amphithéâtre, terrain de sport) peuvent exister en plusieurs
+        // exemplaires dans un même établissement, contrairement à gymnase/CDI qui sont uniques.
         $scope.createDefaultResourceTypes = function () {
             if (!$scope.selectedStructure) {
                 return;
@@ -1296,10 +1299,52 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
             var existingNames = _.map($scope.selectedStructure.types || [], function (t) {
                 return t.name;
             });
-            var toCreate = _.filter($scope.defaultResourceTypesCatalog, function (item) {
-                return existingNames.indexOf(item.name) === -1;
+            $scope.defaultTypesSelection = _.map($scope.defaultResourceTypesCatalog, function (item) {
+                var exists = existingNames.indexOf(item.name) !== -1;
+                return {
+                    name: item.name,
+                    category: item.category,
+                    alreadyExists: exists,
+                    checked: !exists,
+                    quantity: 1
+                };
             });
+            $scope.customTypesInput = '';
+            $scope.currentErrors = [];
+            $scope.display.processing = undefined;
+            template.open('resources', 'resource/create-default-resource-types');
+        };
+
+        $scope.confirmCreateDefaultResourceTypes = function () {
+            if (!$scope.selectedStructure) {
+                return;
+            }
+            var toCreate = [];
+            ($scope.defaultTypesSelection || []).forEach(function (item) {
+                if (!item.checked || item.alreadyExists) return;
+                var qty = parseInt(item.quantity, 10) || 1;
+                if (qty <= 1) {
+                    toCreate.push({ name: item.name, category: item.category });
+                } else {
+                    for (var i = 1; i <= qty; i++) {
+                        toCreate.push({ name: item.name + ' ' + i, category: item.category });
+                    }
+                }
+            });
+
+            // Saisie libre : une ligne par salle, au format "Nom" ou "Nom - CATEGORIE".
+            // Catégorie absente -> GENERAL (l'admin pourra la corriger ensuite dans l'édition du type).
+            (($scope.customTypesInput || '').split('\n')).forEach(function (line) {
+                line = line.trim();
+                if (!line) return;
+                var parts = line.split(' - ');
+                var name = parts[0].trim();
+                var category = (parts.length > 1 && parts[1].trim()) ? parts[1].trim().toUpperCase() : 'GENERAL';
+                if (name) toCreate.push({ name: name, category: category });
+            });
+
             if (toCreate.length === 0) {
+                $scope.closeResourceType();
                 return;
             }
 
@@ -1311,6 +1356,7 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
                 if (remaining === 0) {
                     $scope.display.processing = undefined;
                     model.refreshRessourceType();
+                    $scope.closeResourceType();
                     $scope.safeApply();
                 }
             };
