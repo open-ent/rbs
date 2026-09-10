@@ -53,6 +53,13 @@ public class TypeAndResourceAppendPolicy implements ResourcesProvider {
 
 	@Override
 	public void authorize(final HttpServerRequest request, final Binding binding, final UserInfos user, final Handler<Boolean> handler) {
+		// Le super-admin plateforme n'a ni ownership ni partage ni scope d'admin local sur une
+		// ressource/réservation d'un établissement tiers ; sans ce contournement, RBS lui est
+		// inaccessible en dehors de son propre établissement.
+		if (user.isADMC()) {
+			handler.handle(true);
+			return;
+		}
 		SqlConf conf = SqlConfs.getConf(ResourceController.class.getName());
 		String resourceId = request.params().get(conf.getResourceIdLabel());
 		String bookingId = request.params().get("bookingId");
@@ -166,6 +173,10 @@ public class TypeAndResourceAppendPolicy implements ResourcesProvider {
 
 
 	public void authorize(String resourceId, String bookingId, final Binding binding, final UserInfos user, final Handler<Boolean> handler) {
+		if (user.isADMC()) {
+			handler.handle(true);
+			return;
+		}
 		boolean hasBooking = (bookingId != null && !bookingId.trim().isEmpty());
 
 		if (resourceId != null && !resourceId.trim().isEmpty() && (parseId(resourceId) instanceof Integer)) {
