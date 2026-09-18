@@ -477,5 +477,6 @@
   "shared.resources": "Ressources partagées",
   "to": "à",
   "type.form.validation.required": "Les demandes de réservation doivent être validées",
-  "rbs.moderation.title": "Modération"
+  "rbs.moderation.title": "Modération",
+  "rbs.edt.room.conflict.warning": "Un cours est déjà prévu dans {{room}} sur ce créneau, d'après l'emploi du temps."
 }

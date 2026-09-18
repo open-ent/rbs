@@ -194,7 +194,16 @@ public class BookingController extends ControllerHelper {
 			if (event.isRight()) {
 				if (event.right().getValue() != null && event.right().getValue().size() > 0) {
 					List<JsonObject> bookings = event.right().getValue().stream().map(JsonObject.class::cast).collect(Collectors.toList());
-					bookings.forEach(booking -> notifyBookingCreatedOrUpdated(request, user, booking, isCreation));
+					bookings.forEach(booking -> {
+						notifyBookingCreatedOrUpdated(request, user, booking, isCreation);
+						final String bookingId = Long.toString(booking.getLong("id", 0L));
+						bookingService.getResourceName(bookingId, resEvent -> {
+							if (resEvent.isRight() && resEvent.right().getValue() != null) {
+								notifyStructureCalendarIfValidated(booking, resEvent.right().getValue().getString("resource_name"),
+										resEvent.right().getValue().getString("structure_id"), user);
+							}
+						});
+					});
 					renderJson(request, event.right().getValue().getJsonObject(0), 200);
 					eventHelper.onCreateResource(request, RESOURCE_NAME);
 				} else {
@@ -277,6 +286,35 @@ public class BookingController extends ControllerHelper {
 			});
 		}
 
+	}
+
+	/**
+	 * Fait apparaître une réservation validée dans l'agenda d'établissement (module calendar),
+	 * sur le même canal event-bus que celui déjà utilisé dans l'autre sens (calendar -> RBS via
+	 * RbsHelper/EventBusController) — pas de nouveau mécanisme, juste le symétrique. Dégradation
+	 * silencieuse si l'établissement n'a pas d'agenda de structure : ce n'est pas bloquant pour la
+	 * réservation elle-même.
+	 */
+	private void notifyStructureCalendarIfValidated(final JsonObject booking, final String resourceName, final String structureId,
+			final UserInfos user) {
+		final int status = booking.getInteger("status", 0);
+		if (status != VALIDATED.status() || structureId == null || structureId.trim().isEmpty()) {
+			return;
+		}
+		final String startDate = booking.getString("start_date", null);
+		final String endDate = booking.getString("end_date", null);
+		if (startDate == null || endDate == null) {
+			return;
+		}
+		JsonObject action = new JsonObject()
+				.put("action", "create-event-from-booking")
+				.put("structureId", structureId)
+				.put("title", resourceName != null ? resourceName : "Réservation")
+				.put("startDate", startDate)
+				.put("endDate", endDate)
+				.put("bookingId", booking.getLong("id", 0L))
+				.put("userId", user.getUserId());
+		eb.send("net.atos.entng.calendar", action);
 	}
 
 	@Post("/resource/:id/booking/periodic")
@@ -650,14 +688,17 @@ public class BookingController extends ControllerHelper {
 												&& notifyEvent.right().getValue().size() > 0) {
 
 											final String resourceName = notifyEvent.right().getValue().getString("resource_name");
+											final String structureId = notifyEvent.right().getValue().getString("structure_id");
 
 											notifyBookingProcessed(request, user, processedBooking, resourceName);
+											notifyStructureCalendarIfValidated(processedBooking, resourceName, structureId, user);
 
 											if (results.size() >= 4) {
 												JsonArray concurrentBookings = results.getJsonArray(3);
 												for (Object o : concurrentBookings) {
 													JsonObject booking = (JsonObject) o;
 													notifyBookingProcessed(request, user, booking, resourceName);
+													notifyStructureCalendarIfValidated(booking, resourceName, structureId, user);
 												}
 											}
 

@@ -165,6 +165,42 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 
 	}
 
+	/**
+	 * Condition SQL "l'utilisateur courant peut lui-même valider une réservation sur cette
+	 * ressource" — même définition que le filtre TypeAndResourceAppendPolicy (partage
+	 * "processBooking" sur le type ou la ressource, administrateur local de l'établissement,
+	 * ou propriétaire du type/de la ressource). Suppose un FROM portant les alias `r`
+	 * (rbs.resource) et `t2` (rbs.resource_type, joint sur r.type_id = t2.id) dans la requête
+	 * appelante. Ajoute les valeurs correspondantes à `values`, dans l'ordre d'apparition.
+	 */
+	private String appendCanValidateCondition(JsonArray values, UserInfos user) {
+		List<String> groupsAndUserIds = new ArrayList<>();
+		groupsAndUserIds.add(user.getUserId());
+		if (user.getGroupsIds() != null) {
+			groupsAndUserIds.addAll(user.getGroupsIds());
+		}
+		List<String> localAdminScope = getLocalAdminScope(user);
+
+		StringBuilder canValidate = new StringBuilder();
+		canValidate.append("(EXISTS (SELECT 1 FROM rbs.resource_type_shares ts WHERE ts.resource_id = r.type_id")
+				.append(" AND ts.member_id IN ").append(Sql.listPrepared(groupsAndUserIds.toArray()))
+				.append(" AND ts.action = 'net-atos-entng-rbs-controllers-BookingController|processBooking')");
+		values.addAll(new JsonArray(groupsAndUserIds));
+
+		canValidate.append(" OR EXISTS (SELECT 1 FROM rbs.resource_shares rs WHERE rs.resource_id = r.id")
+				.append(" AND rs.member_id IN ").append(Sql.listPrepared(groupsAndUserIds.toArray()))
+				.append(" AND rs.action = 'net-atos-entng-rbs-controllers-BookingController|processBooking')");
+		values.addAll(new JsonArray(groupsAndUserIds));
+
+		if (localAdminScope != null && !localAdminScope.isEmpty()) {
+			canValidate.append(" OR t2.school_id IN ").append(Sql.listPrepared(localAdminScope.toArray()));
+			values.addAll(new JsonArray(localAdminScope));
+		}
+		canValidate.append(" OR t2.owner = ? OR r.owner = ?)");
+		values.add(user.getUserId()).add(user.getUserId());
+		return canValidate.toString();
+	}
+
 	private JsonObject getCreationBooking(final String resourceId, final Booking booking, final Slot slot, final UserInfos user) {
 
 
@@ -179,12 +215,13 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 				.append(" SELECT  ?, ?, ?, ?,");
 		values.add(rId).add(user.getUserId()).add(booking.getBookingReason()).add(booking.getBookingQuantity());
 
-		// If validation is activated, the booking is created with status "created".
-		// Otherwise, it is created with status "validated".
-		// TODO V2 : la reservation doit etre automatiquement validee si le demandeur
-		// est valideur
-		query.append(" (SELECT CASE WHEN (r.validation IS true) THEN ? ELSE ? END")
-				.append(" FROM rbs.resource AS r")
+		// Si la validation est activée, la réservation part en attente ("created") — SAUF si le
+		// demandeur peut lui-même la valider : elle est alors directement "validated", sans
+		// passer par une modération que le même utilisateur pourrait de toute façon accorder
+		// lui-même (cf. appendCanValidateCondition).
+		query.append(" (SELECT CASE WHEN (r.validation IS true) AND NOT ").append(appendCanValidateCondition(values, user))
+				.append(" THEN ? ELSE ? END")
+				.append(" FROM rbs.resource AS r INNER JOIN rbs.resource_type AS t2 ON r.type_id = t2.id")
 				.append(" WHERE r.id = ?),");
 		values.add(CREATED.status()).add(VALIDATED.status()).add(rId);
 
@@ -311,10 +348,11 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 			query.append("(select id from parent_booking),");
 		}
 
-		// Subquery to insert proper status : created if validation is activated. Validated otherwise
-
-		query.append(" (SELECT CASE WHEN (r.validation IS true) THEN ? ELSE ? END")
-				.append(" FROM rbs.resource AS r")
+		// Statut : en attente si validation activée, sauf si le demandeur peut lui-même valider
+		// (cf. appendCanValidateCondition).
+		query.append(" (SELECT CASE WHEN (r.validation IS true) AND NOT ").append(appendCanValidateCondition(values, user))
+				.append(" THEN ? ELSE ? END")
+				.append(" FROM rbs.resource AS r INNER JOIN rbs.resource_type AS t2 ON r.type_id = t2.id")
 				.append(" WHERE r.id = ?), ?)");
 		values.add(CREATED.status()).add(VALIDATED.status()).add(resourceId).addNull();
 
@@ -338,8 +376,9 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 				query.append("(select id from parent_booking),");
 			}
 
-			query.append(" (SELECT CASE WHEN (r.validation IS true) THEN ? ELSE ? END")
-					.append(" FROM rbs.resource AS r")
+			query.append(" (SELECT CASE WHEN (r.validation IS true) AND NOT ").append(appendCanValidateCondition(values, user))
+					.append(" THEN ? ELSE ? END")
+					.append(" FROM rbs.resource AS r INNER JOIN rbs.resource_type AS t2 ON r.type_id = t2.id")
 					.append(" WHERE r.id = ?), ?)");
 			values.add(CREATED.status()).add(VALIDATED.status()).add(resourceId).addNull();
 			//
@@ -1013,13 +1052,14 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 
 	private void getResourceName(final String bookingId, final Handler<Either<String, JsonObject>> handler,
 			boolean withBooking) {
-		StringBuilder query = new StringBuilder("SELECT r.name AS resource_name");
+		StringBuilder query = new StringBuilder("SELECT r.name AS resource_name, t.school_id AS structure_id");
 		if (withBooking) {
 			query.append(", b.owner, b.is_periodic,").append("to_char(b.start_date, '").append(DATE_FORMAT)
 					.append("') as start_date,").append("to_char(b.end_date, '").append(DATE_FORMAT)
 					.append("') as end_date").append(", b.parent_booking_id");
 		}
 		query.append(" FROM rbs.resource AS r").append(" INNER JOIN rbs.booking AS b on r.id = b.resource_id")
+				.append(" INNER JOIN rbs.resource_type AS t on r.type_id = t.id")
 				.append(" WHERE b.id = ?");
 
 		Sql.getInstance().prepared(query.toString(),

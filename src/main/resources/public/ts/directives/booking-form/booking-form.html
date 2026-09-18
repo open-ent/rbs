@@ -276,6 +276,9 @@
                             <div class="cell warning" ng-if="vm.slotNotFound">
                                 <i18n>rbs.booking.warning.slot.not.found</i18n>
                             </div>
+                            <div class="cell warning" ng-if="vm.edtRoomConflictWarning">
+                                [[vm.edtRoomConflictWarning]]
+                            </div>
                         </div>
 
                         <!-- Periodicity toggle - new booking -->

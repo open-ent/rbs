@@ -1,4 +1,5 @@
 import {_, ng, moment, notify, idiom as lang} from 'entcore';
+import http from 'axios';
 import {ROOTS} from "../../core/const/roots.const";
 import {RBS} from "../../models/models";
 import {DateUtils} from "../../utilities/date.util";
@@ -19,6 +20,9 @@ interface IViewModel {
     editedBooking: any;
     displayLightbox: boolean;
     selectedStructure: any;
+
+    edtRoomConflictWarning: string;
+    checkEdtRoomConflict(): Promise<void>;
 
     slotProfilesComponent: any;
     selectedSlotStart: any;
@@ -137,6 +141,41 @@ export const bookingForm = ng.directive('bookingForm', ['BookingEventService', '
                         await vm.editBooking();
                         break;
                 }
+                $scope.$watchGroup([
+                    () => vm.editedBooking && vm.editedBooking.resource && vm.editedBooking.resource.name,
+                    () => vm.editedBooking && vm.editedBooking.startMoment && vm.editedBooking.startMoment.valueOf(),
+                    () => vm.editedBooking && vm.editedBooking.endMoment && vm.editedBooking.endMoment.valueOf()
+                ], vm.checkEdtRoomConflict);
+            };
+
+            // Avertissement non bloquant (pas de filtre par salle natif côté EDT — relais serveur
+            // qui récupère les cours de la structure sur la période puis filtre par roomLabels) :
+            // corrélation par nom exact entre la ressource RBS et roomLabels EDT, aucune garantie
+            // qu'ils coïncident si les libellés diffèrent — silence total dans ce cas, jamais
+            // bloquant pour la réservation.
+            vm.edtRoomConflictWarning = '';
+            vm.checkEdtRoomConflict = async (): Promise<void> => {
+                vm.edtRoomConflictWarning = '';
+                const booking: any = vm.editedBooking;
+                const structureId: string = vm.selectedStructure && vm.selectedStructure.id;
+                const roomName: string = booking && booking.resource && booking.resource.name;
+                if (!structureId || !roomName || !booking.startMoment || !booking.endMoment) {
+                    return;
+                }
+                const start: string = booking.startMoment.format('YYYY-MM-DDTHH:mm:ss');
+                const end: string = booking.endMoment.format('YYYY-MM-DDTHH:mm:ss');
+                try {
+                    const {data}: any = await http.get(
+                        `/edt/structures/${structureId}/room-conflicts/${start}/${end}`,
+                        {params: {room: roomName}}
+                    );
+                    if (data && data.length > 0) {
+                        vm.edtRoomConflictWarning = lang.translate('rbs.edt.room.conflict.warning').replace('{{room}}', roomName);
+                    }
+                } catch (e) {
+                    vm.edtRoomConflictWarning = '';
+                }
+                $scope.$applyAsync();
             };
 
             // New booking
