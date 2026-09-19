@@ -1004,6 +1004,16 @@ export const bookingForm = ng.directive('bookingForm', ['BookingEventService', '
                 // Check
                 vm.currentErrors = [];
 
+                // Garde explicite : le bouton est normalement désactivé (ng-disabled) dans ce cas,
+                // mais rien n'empêchait jusqu'ici cette fonction d'être appelée quand même (ex.
+                // reset-guard, appel programmatique) — silence total côté utilisateur sinon,
+                // aucune réservation créée sans le moindre message.
+                if (vm.isBookingQuantityWrong(vm.editedBooking)) {
+                    notify.error(lang.translate('rbs.booking.edit.quantity.none'));
+                    vm.currentErrors.push({error: 'rbs.booking.edit.quantity.none'});
+                    return;
+                }
+
                 // vm.editedBooking = semanticObject(vm.editedBooking, Booking);
 
                 if (typeof vm.booking.startTime === 'string') {
