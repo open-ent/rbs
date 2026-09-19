@@ -86,6 +86,12 @@
 			<input class="input-size" type="number" min="0" ng-model="editedResource.quantity"
 				   ng-change="syncBookingsUsingResource(editedResource)"/>
 		</div>
+		<div class="row">
+			<label class="three cell"></label>
+			<div class="nine cell" style="font-style: italic; color: #767676;">
+				<i18n>rbs.resource.edit.quantity.hint</i18n>
+			</div>
+		</div>
 
 		<!-- Mobile : détermine si "capacité" et "équipements" (pertinents pour une salle
 		     uniquement) sont proposés — un ordinateur portable ou un vidéoprojecteur mobile n'a
@@ -97,6 +103,7 @@
 				<input type="checkbox" id="is-mobile" ng-model="editedResource.is_mobile"
 					   ng-change="onIsMobileChanged()" input-guard/>
 				<label for="is-mobile"><i18n>rbs.resource.edit.is_mobile.label</i18n></label>
+				<div style="font-style: italic; color: #767676;"><i18n>rbs.resource.edit.is_mobile.hint</i18n></div>
 			</div>
 		</div>
 		<div class="row">
@@ -104,6 +111,7 @@
 			<div class="nine cell">
 				<input type="checkbox" id="requires-key" ng-model="editedResource.requires_key" input-guard/>
 				<label for="requires-key"><i18n>rbs.resource.edit.requires_key.label</i18n></label>
+				<div style="font-style: italic; color: #767676;"><i18n>rbs.resource.edit.requires_key.hint</i18n></div>
 			</div>
 		</div>
 
@@ -112,12 +120,21 @@
 			<label class="three cell"><i18n>rbs.resource.edit.capacity.label</i18n></label>
 			<input class="input-size" type="number" min="0" ng-model="editedResource.capacity"/>
 		</div>
+		<div class="row" ng-if="!editedResource.is_mobile">
+			<label class="three cell"></label>
+			<div class="nine cell" style="font-style: italic; color: #767676;">
+				<i18n>rbs.resource.edit.capacity.hint</i18n>
+			</div>
+		</div>
 
 		<!-- Equipment (salle uniquement) : sélectionnable dès la création (associé à
 		     l'enregistrement, cf. Resource.prototype.toJSON), pas seulement après un premier save. -->
 		<div class="row" ng-if="!editedResource.is_mobile">
 			<label class="three cell"><i18n>rbs.resource.edit.equipment.label</i18n></label>
 			<div class="nine cell">
+				<div style="font-style: italic; color: #767676; margin-bottom: 8px;">
+					<i18n>rbs.resource.edit.equipment.hint</i18n>
+				</div>
 				<select id="select-equipment" ng-model="equipmentPicker.selectedId" ng-change="addEquipment()">
 					<option value="" selected><i18n>rbs.resource.edit.equipment.choose</i18n></option>
 					<option ng-repeat="e in equipmentCatalog" value="[[e.id]]">[[e.name]]</option>
@@ -126,6 +143,7 @@
 					<div ng-repeat="e in editedResource.equipment track by e.id" ng-click="removeEquipment(e.id)">[[e.name]]</div>
 				</div>
 				<div class="top-spacing-three">
+					<div><i18n>rbs.resource.edit.equipment.new.label</i18n></div>
 					<input type="text" ng-model="newEquipmentName" i18n-placeholder="rbs.resource.edit.equipment.new.placeholder"/>
 					<button type="button" ng-click="createAndAddEquipment()" ng-disabled="!newEquipmentName">
 						<i18n>rbs.resource.edit.equipment.new.add</i18n>
