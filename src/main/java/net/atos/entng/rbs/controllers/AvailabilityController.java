@@ -183,7 +183,12 @@ public class AvailabilityController extends ControllerHelper {
 
 	private Availability treatAvailability(HttpServerRequest request, JsonObject json) {
 		Integer resourceId = Integer.parseInt(request.params().get("id"));
-		json.put("resourceId", resourceId);
+		// Availability::getResourceId() lit "resource_id" (snake_case, cohérent avec les autres
+		// clés du payload createAvailability.json) — bug pré-existant corrigé (le contrôleur
+		// écrivait "resourceId" en camelCase, jamais lu par le modèle, donc systématiquement
+		// NULL : createAvailability/updateAvailability étaient cassés depuis toujours, jamais
+		// détecté avant l'écriture d'un test e2e sur ce chemin, scénario BFC 1.3 étape 6).
+		json.put("resource_id", resourceId);
 
 		Integer availabilityId = request.params().contains("availabilityId") ? Integer.parseInt(request.params().get("availabilityId")) : -1;
 		Availability availability = new Availability(json, availabilityId);

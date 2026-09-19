@@ -67,7 +67,11 @@ public class ResourceServiceSqlImpl extends SqlCrudService implements ResourceSe
 				.append(" array_to_json(array_agg(m.group_id)) as groups,")
 				.append(" (SELECT json_agg(json_build_object('id', e.id, 'name', e.name) ORDER BY e.name)")
 				.append("  FROM rbs.resource_equipment re INNER JOIN rbs.equipment e ON re.equipment_id = e.id")
-				.append("  WHERE re.resource_id = r.id) as equipment ")
+				.append("  WHERE re.resource_id = r.id) as equipment,")
+				.append(" (SELECT json_agg(json_build_object('id', ar.id, 'name', ar.name) ORDER BY ar.name)")
+				.append("  FROM rbs.resource_assignment ra INNER JOIN rbs.resource ar")
+				.append("   ON ar.id = (CASE WHEN ra.resource_id_1 = r.id THEN ra.resource_id_2 ELSE ra.resource_id_1 END)")
+				.append("  WHERE ra.resource_id_1 = r.id OR ra.resource_id_2 = r.id) as assigned_resources ")
 				.append(" FROM rbs.resource AS r")
 				.append(" INNER JOIN rbs.resource_type AS t ON r.type_id = t.id")
 				.append(" LEFT JOIN rbs.resource_shares AS rs ON r.id = rs.resource_id")
@@ -101,7 +105,35 @@ public class ResourceServiceSqlImpl extends SqlCrudService implements ResourceSe
 		query.append(" GROUP BY r.id")
 				.append(" ORDER BY r.name");
 
-		Sql.getInstance().prepared(query.toString(), values, parseShared(handler));
+		Sql.getInstance().prepared(query.toString(), values, parseShared(parseJsonAggFields(handler, "equipment", "assigned_resources")));
+	}
+
+	/**
+	 * `json_agg(...)` renvoie une colonne de type "json" que le pilote SQL restitue comme une
+	 * simple chaîne de caractères (texte JSON non décodé), pas comme un tableau déjà structuré —
+	 * même contrainte que "shared"/"groups", cf. {@link org.entcore.common.sql.SqlResult#parseShared}.
+	 * Décode ici manuellement les champs indiqués en JsonArray natif (ou tableau vide si NULL),
+	 * pour que le JSON renvoyé au client soit bien structuré plutôt qu'une chaîne à re-parser.
+	 */
+	private static Handler<Either<String, JsonArray>> parseJsonAggFields(
+			final Handler<Either<String, JsonArray>> handler, final String... fields) {
+		return event -> {
+			if (event.isRight()) {
+				for (Object row : event.right().getValue()) {
+					if (!(row instanceof JsonObject)) continue;
+					JsonObject j = (JsonObject) row;
+					for (String field : fields) {
+						Object value = j.getValue(field);
+						if (value instanceof String) {
+							j.put(field, new JsonArray((String) value));
+						} else if (value == null) {
+							j.put(field, new JsonArray());
+						}
+					}
+				}
+			}
+			handler.handle(event);
+		};
 	}
 
 	@Override

@@ -119,6 +119,21 @@ public class BookingController extends ControllerHelper {
 		bookingNotificationService = new BookingNotificationService(BookingController.log, eb, notification, bookingService);
 	}
 
+	/**
+	 * Droit purement déclaratif (aucune logique métier propre) : partager cette action à un
+	 * utilisateur/groupe lui permet de voir ses propres réservations sur cette ressource
+	 * directement validées, sans passer par la modération — cf. appendCanValidateCondition
+	 * dans BookingServiceSqlImpl, qui reconnaît ce même nom d'action. Le simple fait d'atteindre
+	 * ce handler prouve déjà le droit (bloqué en amont par TypeAndResourceAppendPolicy sinon).
+	 */
+	@Get("/resource/:id/booking/can-auto-validate")
+	@ApiDoc("Check if current user's own bookings on this resource are automatically validated without moderation")
+	@SecuredAction(value = "rbs.booking.publish", type = ActionType.RESOURCE)
+	@ResourceFilter(TypeAndResourceAppendPolicy.class)
+	public void canAutoValidate(final HttpServerRequest request) {
+		renderJson(request, new JsonObject().put("canAutoValidate", true));
+	}
+
 	@Post("/resource/:id/booking")
 	@ApiDoc("Create booking of a given resource")
 	@SecuredAction(value = "rbs.contrib", type = ActionType.RESOURCE)
@@ -622,7 +637,13 @@ public class BookingController extends ControllerHelper {
 
 	@Put("/resource/:id/booking/:bookingId")
 	@ApiDoc("Update booking")
-	@SecuredAction(value = "rbs.contrib", type = ActionType.RESOURCE)
+	// Le label "rbs.contrib" (Réserver) n'a jamais réellement compté pour AUTORISER la
+	// modification de la réservation D'UN AUTRE (TypeAndResourceAppendPolicy ignorait ce label et
+	// ne vérifiait que le partage de processBooking, ou l'ownership) — le renommer vers
+	// "rbs.booking.manager" ne change donc aucun comportement existant. Le propriétaire garde
+	// toujours le droit de modifier SA PROPRE réservation (clause dédiée dans le filtre), quel
+	// que soit ce partage.
+	@SecuredAction(value = "rbs.booking.manager", type = ActionType.RESOURCE)
 	@ResourceFilter(TypeAndResourceAppendPolicy.class)
 	@Trace(Actions.UPDATE_BOOKING)
 	public void updateBooking(final HttpServerRequest request) {
@@ -639,7 +660,8 @@ public class BookingController extends ControllerHelper {
 
 	@Put("/resource/:id/booking/:bookingId/periodic")
 	@ApiDoc("Update periodic booking")
-	@SecuredAction(value = "rbs.contrib", type = ActionType.RESOURCE)
+	// Cf. commentaire sur updateBooking : renommage sans impact sur les partages existants.
+	@SecuredAction(value = "rbs.booking.manager", type = ActionType.RESOURCE)
 	@ResourceFilter(TypeAndResourceAppendPolicy.class)
 	@Trace(Actions.UPDATE_PERIODIC_BOOKING)
 	public void updatePeriodicBooking(final HttpServerRequest request) {
@@ -779,7 +801,11 @@ public class BookingController extends ControllerHelper {
 
 	@Delete("/resource/:id/booking/:bookingId/:booleanThisAndAfter")
 	@ApiDoc("Delete booking")
-	@SecuredAction(value = "rbs.manager", type = ActionType.RESOURCE)
+	// Regroupé avec updateBooking/updatePeriodicBooking sous "rbs.booking.manager" (annuler et
+	// modifier la réservation d'un tiers sont la même responsabilité) plutôt que "rbs.manager"
+	// (administration complète de la ressource). Le propriétaire garde toujours le droit de
+	// supprimer SA PROPRE réservation (clause dédiée dans TypeAndResourceAppendPolicy).
+	@SecuredAction(value = "rbs.booking.manager", type = ActionType.RESOURCE)
 	@ResourceFilter(TypeAndResourceAppendPolicy.class)
 	@Trace(Actions.DELETE_BOOKING)
 	public void deleteBooking(final HttpServerRequest request) {

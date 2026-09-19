@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "groupIds": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "startAt": { "type": "string" },
+    "endAt": { "type": "string" },
+    "periodicEndDate": { "type": "integer" },
+    "dryRun": { "type": "boolean" }
+  },
+  "required": ["startAt", "endAt", "periodicEndDate"]
+}

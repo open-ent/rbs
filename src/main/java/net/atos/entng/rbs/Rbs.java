@@ -131,6 +131,8 @@ public class Rbs extends BaseServer {
 		addController(new BookingController(eb));
 		addController(new AvailabilityController());
 		addController(new EquipmentController(eb));
+		addController(new ResourceAssignmentController(eb));
+		addController(new EdtImportController(eb));
 		addController(new EventBusController(new BookingServiceSqlImpl(), new ResourceTypeServiceSqlImpl(),
 				new ResourceServiceSqlImpl()));
 

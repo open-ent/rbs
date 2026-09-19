@@ -26,6 +26,7 @@ var rbsBehaviours = {
     workflow: {
         typemanage: 'net.atos.entng.rbs.controllers.ResourceTypeController|createResourceType',
         validator: 'net.atos.entng.rbs.controllers.BookingController|listUnprocessedBookings',
+        edtImport: 'net.atos.entng.rbs.controllers.EdtImportController|importFromEdt',
     }
 };
 

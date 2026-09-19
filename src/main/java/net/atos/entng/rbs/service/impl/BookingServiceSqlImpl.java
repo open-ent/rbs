@@ -168,10 +168,13 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 	/**
 	 * Condition SQL "l'utilisateur courant peut lui-même valider une réservation sur cette
 	 * ressource" — même définition que le filtre TypeAndResourceAppendPolicy (partage
-	 * "processBooking" sur le type ou la ressource, administrateur local de l'établissement,
-	 * ou propriétaire du type/de la ressource). Suppose un FROM portant les alias `r`
-	 * (rbs.resource) et `t2` (rbs.resource_type, joint sur r.type_id = t2.id) dans la requête
-	 * appelante. Ajoute les valeurs correspondantes à `values`, dans l'ordre d'apparition.
+	 * "processBooking" **ou** "rbs.booking.publish" sur le type ou la ressource, administrateur
+	 * local de l'établissement, ou propriétaire du type/de la ressource). "processBooking"
+	 * (Valideur) reste un superset : il autorise en plus à valider les demandes des autres.
+	 * "rbs.booking.publish" (BookingController::canAutoValidate) est le nouveau droit fin, qui ne
+	 * fait qu'auto-valider les réservations DU titulaire lui-même. Suppose un FROM portant les
+	 * alias `r` (rbs.resource) et `t2` (rbs.resource_type, joint sur r.type_id = t2.id) dans la
+	 * requête appelante. Ajoute les valeurs correspondantes à `values`, dans l'ordre d'apparition.
 	 */
 	private String appendCanValidateCondition(JsonArray values, UserInfos user) {
 		List<String> groupsAndUserIds = new ArrayList<>();
@@ -184,12 +187,14 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 		StringBuilder canValidate = new StringBuilder();
 		canValidate.append("(EXISTS (SELECT 1 FROM rbs.resource_type_shares ts WHERE ts.resource_id = r.type_id")
 				.append(" AND ts.member_id IN ").append(Sql.listPrepared(groupsAndUserIds.toArray()))
-				.append(" AND ts.action = 'net-atos-entng-rbs-controllers-BookingController|processBooking')");
+				.append(" AND ts.action IN ('net-atos-entng-rbs-controllers-BookingController|processBooking',")
+				.append(" 'net-atos-entng-rbs-controllers-BookingController|canAutoValidate'))");
 		values.addAll(new JsonArray(groupsAndUserIds));
 
 		canValidate.append(" OR EXISTS (SELECT 1 FROM rbs.resource_shares rs WHERE rs.resource_id = r.id")
 				.append(" AND rs.member_id IN ").append(Sql.listPrepared(groupsAndUserIds.toArray()))
-				.append(" AND rs.action = 'net-atos-entng-rbs-controllers-BookingController|processBooking')");
+				.append(" AND rs.action IN ('net-atos-entng-rbs-controllers-BookingController|processBooking',")
+				.append(" 'net-atos-entng-rbs-controllers-BookingController|canAutoValidate'))");
 		values.addAll(new JsonArray(groupsAndUserIds));
 
 		if (localAdminScope != null && !localAdminScope.isEmpty()) {

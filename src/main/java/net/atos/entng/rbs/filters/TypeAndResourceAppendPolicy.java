@@ -93,27 +93,16 @@ public class TypeAndResourceAppendPolicy implements ResourcesProvider {
 					.append(" WHERE (");
 
 			if (isUpdateBooking(binding) || isUpdatePeriodicBooking(binding) || isDeleteBooking(binding)) {
-				query.append("(ts.member_id IN ").append(Sql.listPrepared(groupsAndUserIds.toArray())).append(" AND ts.action = 'net-atos-entng-rbs-controllers-BookingController|processBooking')");
-				for (String groupOruser : groupsAndUserIds) {
-					values.add(groupOruser);
-				}
-
-				query.append(" OR (rs.member_id IN ").append(Sql.listPrepared(groupsAndUserIds.toArray())).append(" AND rs.action = 'net-atos-entng-rbs-controllers-BookingController|processBooking')");
-				for (String groupOruser : groupsAndUserIds) {
-					values.add(groupOruser);
-				}
+				// "processBooking" (Valideur) reste un superset rétrocompatible : tout partage
+				// déjà configuré continue de tout autoriser. "rbs.booking.manager" (nom réel de la
+				// méthode appelée, sharedMethod) est le nouveau droit fin, attribuable seul, pour
+				// annuler/modifier la réservation d'un tiers SANS pouvoir valider de nouvelles
+				// demandes — cf. commentaires sur les @SecuredAction de BookingController.
+				appendActionCondition(query, values, groupsAndUserIds, "net-atos-entng-rbs-controllers-BookingController|processBooking");
+				query.append(" OR ");
+				appendActionCondition(query, values, groupsAndUserIds, sharedMethod);
 			} else {
-				query.append("(ts.member_id IN ").append(Sql.listPrepared(groupsAndUserIds.toArray())).append(" AND ts.action = ?)");
-				for (String groupOruser : groupsAndUserIds) {
-					values.add(groupOruser);
-				}
-				values.add(sharedMethod);
-
-				query.append(" OR (rs.member_id IN ").append(Sql.listPrepared(groupsAndUserIds.toArray())).append(" AND rs.action = ?)");
-				for (String groupOruser : groupsAndUserIds) {
-					values.add(groupOruser);
-				}
-				values.add(sharedMethod);
+				appendActionCondition(query, values, groupsAndUserIds, sharedMethod);
 			}
 
 			// Authorize user if he is a local administrator for the resourceType's school_id
@@ -163,6 +152,21 @@ public class TypeAndResourceAppendPolicy implements ResourcesProvider {
 		} else {
 			handler.handle(false);
 		}
+	}
+
+	/** Fragment "(ts partage cette action pour l'un des groupes/user) OR (rs partage cette action pour l'un des groupes/user)". */
+	private void appendActionCondition(StringBuilder query, JsonArray values, List<String> groupsAndUserIds, String action) {
+		query.append("(ts.member_id IN ").append(Sql.listPrepared(groupsAndUserIds.toArray())).append(" AND ts.action = ?)");
+		for (String groupOruser : groupsAndUserIds) {
+			values.add(groupOruser);
+		}
+		values.add(action);
+
+		query.append(" OR (rs.member_id IN ").append(Sql.listPrepared(groupsAndUserIds.toArray())).append(" AND rs.action = ?)");
+		for (String groupOruser : groupsAndUserIds) {
+			values.add(groupOruser);
+		}
+		values.add(action);
 	}
 
 	public Future<Boolean> authorize(String resourceId, String bookingId, final Binding binding, final UserInfos user) {

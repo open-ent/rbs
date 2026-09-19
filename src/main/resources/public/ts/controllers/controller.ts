@@ -39,6 +39,24 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
                     );
                 }
                 $scope.showCalendar(false);
+            },
+            // Lien direct depuis school-planner (bouton "Sécuriser les salles dans RBS maintenant"
+            // après un transfert vers l'Emploi du temps) : ouvre le mode gestion puis l'écran
+            // d'import EDT directement, sur la structure demandée si fournie.
+            openEdtImportFromRoute: function (param) {
+                $scope.showManage();
+                $timeout(function () {
+                    if (param && param.structureId) {
+                        var match = _.filter($scope.structuresWithTypes, function (s) {
+                            return s.id === param.structureId;
+                        })[0];
+                        if (match) {
+                            $scope.setSelectedStructureForCreation(match);
+                        }
+                    }
+                    $scope.openEdtImport();
+                    $scope.safeApply();
+                }, 300);
             }
         });
 
@@ -1376,6 +1394,79 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
             });
         };
 
+        // Génération des réservations depuis l'Emploi du temps (scénario BFC 1.3, étape 5 :
+        // "traiter les besoins récurrents avant la rentrée") — remplace la ressaisie une par une.
+        // Toujours un aperçu (rien n'est créé) avant de proposer la confirmation réelle.
+        // weeksToScan : nombre de semaines à analyser à partir de weekStart (par défaut 1). Utile
+        // pour les emplois du temps qui alternent (semaine A/semaine B) : une seule semaine peut
+        // manquer certains cours qui n'ont lieu qu'une semaine sur deux — l'élargir à 2 semaines
+        // (ou plus) permet de tous les détecter avant de les répéter sur toute la période choisie.
+        $scope.edtImportForm = { weekStart: '', periodicEndDate: '', weeksToScan: 1 };
+        $scope.edtImportReport = null;
+        $scope.edtImportLoading = false;
+        $scope.edtImportError = null;
+
+        $scope.openEdtImport = function () {
+            if (!$scope.selectedStructure) { return; }
+            const today = new Date();
+            const endOfSchoolYear = new Date(today.getMonth() >= 7 ? today.getFullYear() + 1 : today.getFullYear(), 6, 5);
+            // input[type=date] d'AngularJS attend un objet Date comme valeur de modèle, pas une
+            // chaîne "yyyy-MM-dd" : avec une chaîne, le champ affichait "jj/mm/aaaa" à l'écran bien
+            // que la valeur réelle soit correctement présente en mémoire (d'où des résultats
+            // corrects malgré un champ visuellement vide, et un garde-fou qui ne se déclenchait
+            // jamais puisque la valeur n'était jamais réellement vide).
+            $scope.edtImportForm = {
+                weekStart: today,
+                periodicEndDate: endOfSchoolYear,
+                weeksToScan: 1,
+            };
+            $scope.edtImportReport = null;
+            $scope.edtImportError = null;
+            template.open('resources', 'resource/edt-import');
+        };
+
+        $scope.closeEdtImport = function () {
+            $scope.edtImportReport = null;
+            template.open('resources', 'resource/manage-resources');
+        };
+
+        const runEdtImport = async (dryRun: boolean): Promise<void> => {
+            // Garde-fou : ne jamais envoyer une requête avec des dates vides/invalides (l'utilisateur
+            // a pu vider un champ pré-rempli) — mieux vaut un message clair qu'un résultat calculé
+            // sur une date par défaut du navigateur (souvent "aujourd'hui", trompeur).
+            if (!$scope.edtImportForm.weekStart || !$scope.edtImportForm.periodicEndDate) {
+                $scope.edtImportError = lang.translate('rbs.edtImport.missingDates');
+                return;
+            }
+            $scope.edtImportLoading = true;
+            $scope.edtImportError = null;
+            try {
+                const periodicEndDate = Math.floor(new Date($scope.edtImportForm.periodicEndDate).getTime() / 1000);
+                // Une semaine complète (7 jours) suffit à capter chaque créneau qui a lieu toutes
+                // les semaines — weeksToScan permet d'élargir la fenêtre pour capter aussi les
+                // cours qui n'ont lieu qu'une semaine sur deux (semaine A/B).
+                const weeksToScan = Math.max(1, parseInt(String($scope.edtImportForm.weeksToScan), 10) || 1);
+                const weekStartDate = new Date($scope.edtImportForm.weekStart);
+                const weekEndDate = new Date(weekStartDate.getTime() + (weeksToScan * 7 - 1) * 24 * 3600 * 1000);
+                const toDateInput = (d: Date) => d.toISOString().slice(0, 10);
+                const { data } = await http.post(`/rbs/structures/${$scope.selectedStructure.id}/import-from-edt`, {
+                    startAt: toDateInput(weekStartDate),
+                    endAt: toDateInput(weekEndDate),
+                    periodicEndDate,
+                    dryRun,
+                });
+                $scope.edtImportReport = data;
+                $scope.edtImportReport.confirmed = !dryRun;
+            } catch (e) {
+                $scope.edtImportError = lang.translate('rbs.edtImport.error');
+            }
+            $scope.edtImportLoading = false;
+            safeApply($scope);
+        };
+
+        $scope.previewEdtImport = (): Promise<void> => runEdtImport(true);
+        $scope.confirmEdtImport = (): Promise<void> => runEdtImport(false);
+
         $scope.newResource = function () {
             $scope.isCreation = true;
             $scope.display.processing = undefined;
@@ -1421,6 +1512,7 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
                 $scope.editedResource.min_delay !== undefined &&
                 $scope.editedResource.min_delay !== null;
             $scope.loadEquipmentCatalog();
+            $scope.loadAssignments();
             template.open('resources', 'resource/edit-resource');
         };
 
@@ -1456,12 +1548,17 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
         // "Capacité" et "équipements" ne concernent qu'une salle fixe — les vider en cochant
         // "matériel mobile" évite de conserver des données résiduelles incohérentes (masquées
         // mais toujours présentes en mémoire, donc réenregistrées si on décoche puis recoche).
+        // Inversement, un local physique (salle, amphithéâtre, gymnase...) est unique : la
+        // "quantité" n'a de sens que pour du matériel mobile, on la fige à 1 sinon.
         $scope.onIsMobileChanged = (): void => {
-            if (!$scope.editedResource.is_mobile) { return; }
-            $scope.editedResource.capacity = null;
-            if ($scope.editedResource.equipment && $scope.editedResource.equipment.length) {
-                $scope.editedResource.equipment = [];
-                saveResourceEquipment();
+            if ($scope.editedResource.is_mobile) {
+                $scope.editedResource.capacity = null;
+                if ($scope.editedResource.equipment && $scope.editedResource.equipment.length) {
+                    $scope.editedResource.equipment = [];
+                    saveResourceEquipment();
+                }
+            } else {
+                $scope.editedResource.quantity = 1;
             }
         };
 
@@ -1499,6 +1596,63 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
                 notify.error(lang.translate('rbs.resource.edit.equipment.save.error'));
             }
             safeApply($scope);
+        };
+
+        // Affectation informative (matériel mobile ↔ salle(s), scénario BFC 1.3, étape 1) :
+        // uniquement disponible après le premier enregistrement (resourceId requis) — cf.
+        // modules/rbs/src/main/resources/sql/018-resource-assignment.sql. N'impacte jamais les
+        // réservations, cf. mémoire rbs-affectation-materiel-mobile-salle.
+        $scope.assignmentCandidates = [];
+        $scope.currentAssignments = [];
+        $scope.assignmentPicker = { selectedId: null };
+
+        $scope.loadAssignments = async (): Promise<void> => {
+            $scope.assignmentCandidates = [];
+            $scope.currentAssignments = [];
+            const schoolId: string = $scope.currentResourceType && $scope.currentResourceType.school_id;
+            const resourceId = $scope.editedResource && $scope.editedResource.id;
+            if (!schoolId || !resourceId) { return; }
+            try {
+                const [candidates, current]: any = await Promise.all([
+                    http.get(`/rbs/resources/candidates/${schoolId}/${resourceId}`),
+                    http.get(`/rbs/resource/${resourceId}/assignments`),
+                ]);
+                $scope.assignmentCandidates = candidates.data || [];
+                $scope.currentAssignments = current.data || [];
+            } catch (e) {
+                $scope.assignmentCandidates = [];
+                $scope.currentAssignments = [];
+            }
+            safeApply($scope);
+        };
+
+        const saveAssignments = async (): Promise<void> => {
+            const resourceId = $scope.editedResource && $scope.editedResource.id;
+            if (!resourceId) { return; }
+            const resourceIds: number[] = ($scope.currentAssignments || []).map((r: any) => r.id);
+            try {
+                await http.put(`/rbs/resource/${resourceId}/assignments`, {resourceIds});
+            } catch (e) {
+                notify.error(lang.translate('rbs.resource.edit.assignment.save.error'));
+            }
+        };
+
+        $scope.addAssignment = (): void => {
+            const id = parseInt($scope.assignmentPicker.selectedId, 10);
+            if (!id) { return; }
+            if (!$scope.currentAssignments.some((r: any) => r.id === id)) {
+                const found = $scope.assignmentCandidates.find((r: any) => r.id === id);
+                if (found) {
+                    $scope.currentAssignments.push(found);
+                    saveAssignments();
+                }
+            }
+            $scope.assignmentPicker.selectedId = null;
+        };
+
+        $scope.removeAssignment = (id: number): void => {
+            $scope.currentAssignments = $scope.currentAssignments.filter((r: any) => r.id !== id);
+            saveAssignments();
         };
 
         $scope.shareCurrentResourceType = function () {

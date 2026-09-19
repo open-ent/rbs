@@ -83,7 +83,8 @@
 		<hr/>
 		<div class="row">
 			<label class="three cell"><i18n>rbs.resource.edit.quantity.label</i18n></label>
-			<input class="input-size" type="number" min="0" ng-model="editedResource.quantity"
+			<input class="input-size" type="number" min="1" ng-model="editedResource.quantity"
+				   ng-disabled="!editedResource.is_mobile"
 				   ng-change="syncBookingsUsingResource(editedResource)"/>
 		</div>
 		<div class="row">
@@ -148,6 +149,31 @@
 					<button type="button" ng-click="createAndAddEquipment()" ng-disabled="!newEquipmentName">
 						<i18n>rbs.resource.edit.equipment.new.add</i18n>
 					</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- Affectation (matériel mobile uniquement) : uniquement disponible après le premier
+		     enregistrement (resourceId requis, cf. loadAssignments/saveAssignments). Purement
+		     informatif, n'impacte jamais les réservations — cf. mémoire
+		     rbs-affectation-materiel-mobile-salle. -->
+		<div class="row" ng-if="editedResource.is_mobile">
+			<label class="three cell"><i18n>rbs.resource.edit.assignment.label</i18n></label>
+			<div class="nine cell">
+				<div style="font-style: italic; color: #767676; margin-bottom: 8px;">
+					<i18n>rbs.resource.edit.assignment.hint</i18n>
+				</div>
+				<div ng-if="!editedResource.id" style="font-style: italic; color: #767676;">
+					<i18n>rbs.resource.edit.assignment.blocked.new</i18n>
+				</div>
+				<div ng-if="editedResource.id">
+					<select id="select-assignment" ng-model="assignmentPicker.selectedId" ng-change="addAssignment()">
+						<option value="" selected><i18n>rbs.resource.edit.assignment.choose</i18n></option>
+						<option ng-repeat="r in assignmentCandidates" value="[[r.id]]">[[r.name]]</option>
+					</select>
+					<div class="select-blocks remove-margin-bottom">
+						<div ng-repeat="r in currentAssignments track by r.id" ng-click="removeAssignment(r.id)">[[r.name]]</div>
+					</div>
 				</div>
 			</div>
 		</div>

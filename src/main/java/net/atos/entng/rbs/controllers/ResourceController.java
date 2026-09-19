@@ -171,6 +171,12 @@ public class ResourceController extends ControllerHelper {
 							if (color == null || color.isEmpty()) {
 								resource.put("color", DEFAULT_COLOR);
 							}
+							// Un local physique (salle, amphithéâtre, gymnase...) est unique : la
+							// "quantité" n'a de sens que pour du matériel mobile. Sécurité côté
+							// serveur en plus du champ désactivé côté IHM (défense en profondeur).
+							if (!resource.getBoolean("is_mobile", false)) {
+								resource.put("quantity", 1);
+							}
 							// equipmentIds n'est pas une colonne de rbs.resource (association séparée,
 							// cf. rbs.resource_equipment) : createResource/updateResource écrivent
 							// dynamiquement toute clé du JSON reçu comme colonne SQL, il faut donc
@@ -204,7 +210,12 @@ public class ResourceController extends ControllerHelper {
 	@Put("/resource/:id")
 	@ApiDoc("Update resource")
 	@ResourceFilter(TypeAndResourceAppendPolicy.class)
-	@SecuredAction(value = "rbs.publish", type = ActionType.RESOURCE)
+	// Droit distinct de "rbs.publish" (valider les réservations) : modifier la fiche d'une
+	// ressource est une responsabilité différente. Renommer uniquement le premier argument du
+	// @SecuredAction (label de regroupement dans le panneau de partage) ne change PAS le nom de
+	// l'action stockée en base (Classe|méthode, cf. TypeAndResourceAppendPolicy) — aucun partage
+	// déjà configuré ne perd de droit, il gagne juste une case à cocher séparée pour l'avenir.
+	@SecuredAction(value = "rbs.resource.manager", type = ActionType.RESOURCE)
 	@Trace(Actions.UPDATE_RESOURCE)
 	public void update(final HttpServerRequest request) {
 		UserUtils.getUserInfos(eb, request, new Handler<UserInfos>() {
@@ -222,6 +233,12 @@ public class ResourceController extends ControllerHelper {
 							long maxDelay = resource.getLong("max_delay", -1L);
 							if(minDelay > -1L && maxDelay > -1L && minDelay >= maxDelay) {
 								badRequest(request, "rbs.resource.bad.request.min_delay.greater.than.max_delay");
+							}
+							// Un local physique (salle, amphithéâtre, gymnase...) est unique : la
+							// "quantité" n'a de sens que pour du matériel mobile. Sécurité côté
+							// serveur en plus du champ désactivé côté IHM (défense en profondeur).
+							if (!resource.getBoolean("is_mobile", false)) {
+								resource.put("quantity", 1);
 							}
 
 							Handler<Either<String, JsonObject>> handler = new Handler<Either<String, JsonObject>>() {
