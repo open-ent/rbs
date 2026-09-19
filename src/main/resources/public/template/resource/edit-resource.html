@@ -87,17 +87,15 @@
 				   ng-change="syncBookingsUsingResource(editedResource)"/>
 		</div>
 
-		<!-- Capacity -->
-		<div class="row">
-			<label class="three cell"><i18n>rbs.resource.edit.capacity.label</i18n></label>
-			<input class="input-size" type="number" min="0" ng-model="editedResource.capacity"/>
-		</div>
-
-		<!-- Mobile / requires key -->
+		<!-- Mobile : détermine si "capacité" et "équipements" (pertinents pour une salle
+		     uniquement) sont proposés — un ordinateur portable ou un vidéoprojecteur mobile n'a
+		     ni capacité d'accueil ni sa propre liste d'équipements, la "quantité" ci-dessus suffit
+		     déjà à compter les exemplaires identiques. -->
 		<div class="row">
 			<label class="three cell"></label>
 			<div class="nine cell">
-				<input type="checkbox" id="is-mobile" ng-model="editedResource.is_mobile" input-guard/>
+				<input type="checkbox" id="is-mobile" ng-model="editedResource.is_mobile"
+					   ng-change="onIsMobileChanged()" input-guard/>
 				<label for="is-mobile"><i18n>rbs.resource.edit.is_mobile.label</i18n></label>
 			</div>
 		</div>
@@ -109,8 +107,15 @@
 			</div>
 		</div>
 
-		<!-- Equipment -->
-		<div class="row" ng-if="editedResource.id">
+		<!-- Capacity (salle uniquement) -->
+		<div class="row" ng-if="!editedResource.is_mobile">
+			<label class="three cell"><i18n>rbs.resource.edit.capacity.label</i18n></label>
+			<input class="input-size" type="number" min="0" ng-model="editedResource.capacity"/>
+		</div>
+
+		<!-- Equipment (salle uniquement) : sélectionnable dès la création (associé à
+		     l'enregistrement, cf. Resource.prototype.toJSON), pas seulement après un premier save. -->
+		<div class="row" ng-if="!editedResource.is_mobile">
 			<label class="three cell"><i18n>rbs.resource.edit.equipment.label</i18n></label>
 			<div class="nine cell">
 				<select id="select-equipment" ng-model="equipmentPicker.selectedId" ng-change="addEquipment()">

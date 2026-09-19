@@ -1453,6 +1453,18 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
             }
         };
 
+        // "Capacité" et "équipements" ne concernent qu'une salle fixe — les vider en cochant
+        // "matériel mobile" évite de conserver des données résiduelles incohérentes (masquées
+        // mais toujours présentes en mémoire, donc réenregistrées si on décoche puis recoche).
+        $scope.onIsMobileChanged = (): void => {
+            if (!$scope.editedResource.is_mobile) { return; }
+            $scope.editedResource.capacity = null;
+            if ($scope.editedResource.equipment && $scope.editedResource.equipment.length) {
+                $scope.editedResource.equipment = [];
+                saveResourceEquipment();
+            }
+        };
+
         $scope.addEquipment = (): void => {
             const id = parseInt($scope.equipmentPicker.selectedId, 10);
             if (!id) { return; }

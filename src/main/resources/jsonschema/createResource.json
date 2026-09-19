@@ -48,6 +48,13 @@
 		"requires_key": {
 			"description": "Accès à la ressource nécessitant une clé",
 			"type": "boolean"
+		},
+		"equipmentIds": {
+			"description": "Équipements à associer dès la création (catalogue rbs.equipment)",
+			"type": "array",
+			"items": {
+				"type": "integer"
+			}
 		}
 	},
 	"required": [

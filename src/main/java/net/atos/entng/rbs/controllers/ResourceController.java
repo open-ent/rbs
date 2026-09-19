@@ -35,7 +35,9 @@ import net.atos.entng.rbs.core.constants.Actions;
 import net.atos.entng.rbs.core.constants.Field;
 import net.atos.entng.rbs.filters.TypeAndResourceAppendPolicy;
 import net.atos.entng.rbs.filters.TypeOwnerSharedOrLocalAdmin;
+import net.atos.entng.rbs.service.EquipmentService;
 import net.atos.entng.rbs.service.ResourceService;
+import net.atos.entng.rbs.service.impl.EquipmentServiceSqlImpl;
 import net.atos.entng.rbs.service.impl.ResourceServiceSqlImpl;
 
 import org.entcore.common.controller.ControllerHelper;
@@ -73,10 +75,12 @@ public class ResourceController extends ControllerHelper {
 	private static final String SCHEMA_RESOURCE_UPDATE = "updateResource";
 
 	private final ResourceService resourceService;
+	private final EquipmentService equipmentService;
 	private final EventHelper eventHelper;
 
 	public ResourceController() {
 		resourceService = new ResourceServiceSqlImpl();
+		equipmentService = new EquipmentServiceSqlImpl();
 		final EventStore eventStore = EventStoreFactory.getFactory().getEventStore(Rbs.class.getSimpleName());
 		this.eventHelper = new EventHelper(eventStore);
 	}
@@ -167,8 +171,25 @@ public class ResourceController extends ControllerHelper {
 							if (color == null || color.isEmpty()) {
 								resource.put("color", DEFAULT_COLOR);
 							}
+							// equipmentIds n'est pas une colonne de rbs.resource (association séparée,
+							// cf. rbs.resource_equipment) : createResource/updateResource écrivent
+							// dynamiquement toute clé du JSON reçu comme colonne SQL, il faut donc
+							// l'extraire avant l'appel, puis l'associer une fois l'id connu.
+							final JsonArray equipmentIdsArray = resource.getJsonArray("equipmentIds");
+							resource.remove("equipmentIds");
 							final Handler<Either<String, JsonObject>> handler = notEmptyResponseHandler(request);
-							resourceService.createResource(resource, user, eventHelper.onCreateResource(request, RESOURCE_NAME, handler));
+							resourceService.createResource(resource, user, eventHelper.onCreateResource(request, RESOURCE_NAME, either -> {
+								if (either.isRight() && equipmentIdsArray != null && !equipmentIdsArray.isEmpty()) {
+									long newResourceId = either.right().getValue().getLong("id");
+									List<Long> equipmentIds = new ArrayList<>();
+									for (Object o : equipmentIdsArray) {
+										equipmentIds.add(((Number) o).longValue());
+									}
+									equipmentService.setResourceEquipment(newResourceId, equipmentIds, ignored -> handler.handle(either));
+								} else {
+									handler.handle(either);
+								}
+							}));
 						}
 					});
 				} else {

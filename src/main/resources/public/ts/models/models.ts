@@ -500,6 +500,12 @@ Resource.prototype.toJSON = function () {
         is_mobile: !!this.is_mobile,
         requires_key: !!this.requires_key
     };
+    // equipmentIds : uniquement à la création (pas d'id encore) — une ressource existante passe
+    // par la route dédiée PUT /resource/:id/equipment (cf. controller.ts saveResourceEquipment),
+    // déjà appelée immédiatement à chaque ajout/retrait, pas au moment du save du formulaire.
+    if (!this.id && this.equipment && this.equipment.length) {
+        json.equipmentIds = this.equipment.map((e: any) => e.id);
+    }
     if (this.was_available !== undefined) {
         json.was_available = this.was_available;
     }
