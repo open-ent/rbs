@@ -64,7 +64,10 @@ public class ResourceServiceSqlImpl extends SqlCrudService implements ResourceSe
 
 		query.append("SELECT r.*,")
 				.append(" json_agg(row_to_json(row(rs.member_id,rs.action)::rbs.share_tuple)) as shared,")
-				.append(" array_to_json(array_agg(m.group_id)) as groups ")
+				.append(" array_to_json(array_agg(m.group_id)) as groups,")
+				.append(" (SELECT json_agg(json_build_object('id', e.id, 'name', e.name) ORDER BY e.name)")
+				.append("  FROM rbs.resource_equipment re INNER JOIN rbs.equipment e ON re.equipment_id = e.id")
+				.append("  WHERE re.resource_id = r.id) as equipment ")
 				.append(" FROM rbs.resource AS r")
 				.append(" INNER JOIN rbs.resource_type AS t ON r.type_id = t.id")
 				.append(" LEFT JOIN rbs.resource_shares AS rs ON r.id = rs.resource_id")

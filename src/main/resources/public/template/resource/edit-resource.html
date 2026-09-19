@@ -87,6 +87,48 @@
 				   ng-change="syncBookingsUsingResource(editedResource)"/>
 		</div>
 
+		<!-- Capacity -->
+		<div class="row">
+			<label class="three cell"><i18n>rbs.resource.edit.capacity.label</i18n></label>
+			<input class="input-size" type="number" min="0" ng-model="editedResource.capacity"/>
+		</div>
+
+		<!-- Mobile / requires key -->
+		<div class="row">
+			<label class="three cell"></label>
+			<div class="nine cell">
+				<input type="checkbox" id="is-mobile" ng-model="editedResource.is_mobile" input-guard/>
+				<label for="is-mobile"><i18n>rbs.resource.edit.is_mobile.label</i18n></label>
+			</div>
+		</div>
+		<div class="row">
+			<label class="three cell"></label>
+			<div class="nine cell">
+				<input type="checkbox" id="requires-key" ng-model="editedResource.requires_key" input-guard/>
+				<label for="requires-key"><i18n>rbs.resource.edit.requires_key.label</i18n></label>
+			</div>
+		</div>
+
+		<!-- Equipment -->
+		<div class="row" ng-if="editedResource.id">
+			<label class="three cell"><i18n>rbs.resource.edit.equipment.label</i18n></label>
+			<div class="nine cell">
+				<select id="select-equipment" ng-model="equipmentPicker.selectedId" ng-change="addEquipment()">
+					<option value="" selected><i18n>rbs.resource.edit.equipment.choose</i18n></option>
+					<option ng-repeat="e in equipmentCatalog" value="[[e.id]]">[[e.name]]</option>
+				</select>
+				<div class="select-blocks remove-margin-bottom">
+					<div ng-repeat="e in editedResource.equipment track by e.id" ng-click="removeEquipment(e.id)">[[e.name]]</div>
+				</div>
+				<div class="top-spacing-three">
+					<input type="text" ng-model="newEquipmentName" i18n-placeholder="rbs.resource.edit.equipment.new.placeholder"/>
+					<button type="button" ng-click="createAndAddEquipment()" ng-disabled="!newEquipmentName">
+						<i18n>rbs.resource.edit.equipment.new.add</i18n>
+					</button>
+				</div>
+			</div>
+		</div>
+
 		<div class="warning default-fontsize top-spacing-three" ng-if="bookingsConflictingResource.length > 0">
 			<div>
 				<i18n>rbs.resource.edit.quantity.warning</i18n>

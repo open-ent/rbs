@@ -495,7 +495,10 @@ Resource.prototype.toJSON = function () {
         max_delay: (this.hasMaxDelay) ? this.max_delay : undefined,
         color: this.color,
         validation: this.validation,
-        quantity: this.quantity
+        quantity: this.quantity,
+        capacity: (this.capacity === '' || this.capacity === undefined) ? null : this.capacity,
+        is_mobile: !!this.is_mobile,
+        requires_key: !!this.requires_key
     };
     if (this.was_available !== undefined) {
         json.was_available = this.was_available;

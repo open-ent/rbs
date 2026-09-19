@@ -1,4 +1,5 @@
 import {_, Behaviours, idiom as lang, ng, notify, template} from 'entcore';
+import http from 'axios';
 import moment from '../moment';
 import {isBookingSlot, RBS} from '../models/models';
 import {BookingUtil} from "../utilities/booking.util";
@@ -1388,6 +1389,7 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
             $scope.editedResource.availabilities = new Availabilities();
             $scope.editedResource.unavailabilities = new Availabilities();
             $scope.openAvailabilitiesTable = false;
+            $scope.loadEquipmentCatalog();
             template.open('resources', 'resource/edit-resource');
         };
 
@@ -1418,7 +1420,73 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
             $scope.editedResource.hasMinDelay =
                 $scope.editedResource.min_delay !== undefined &&
                 $scope.editedResource.min_delay !== null;
+            $scope.loadEquipmentCatalog();
             template.open('resources', 'resource/edit-resource');
+        };
+
+        // Équipements fixes (scénario BFC 1.3, étape 1) : catalogue par établissement, réutilisable
+        // entre ressources — cf. modules/rbs/src/main/resources/sql/017-resource-capacity-equipment-mobile-key.sql.
+        $scope.equipmentCatalog = [];
+        $scope.equipmentPicker = { selectedId: null };
+        $scope.newEquipmentName = '';
+
+        $scope.loadEquipmentCatalog = async (): Promise<void> => {
+            $scope.equipmentCatalog = [];
+            const schoolId: string = $scope.currentResourceType && $scope.currentResourceType.school_id;
+            if (!schoolId) { return; }
+            try {
+                const {data}: any = await http.get(`/rbs/equipments/${schoolId}`);
+                $scope.equipmentCatalog = data || [];
+            } catch (e) {
+                $scope.equipmentCatalog = [];
+            }
+            safeApply($scope);
+        };
+
+        const saveResourceEquipment = async (): Promise<void> => {
+            if (!$scope.editedResource || !$scope.editedResource.id) { return; }
+            const equipmentIds: number[] = ($scope.editedResource.equipment || []).map((e: any) => e.id);
+            try {
+                await http.put(`/rbs/resource/${$scope.editedResource.id}/equipment`, {equipmentIds});
+            } catch (e) {
+                notify.error(lang.translate('rbs.resource.edit.equipment.save.error'));
+            }
+        };
+
+        $scope.addEquipment = (): void => {
+            const id = parseInt($scope.equipmentPicker.selectedId, 10);
+            if (!id) { return; }
+            if (!$scope.editedResource.equipment) { $scope.editedResource.equipment = []; }
+            if (!$scope.editedResource.equipment.some((e: any) => e.id === id)) {
+                const found = $scope.equipmentCatalog.find((e: any) => e.id === id);
+                if (found) {
+                    $scope.editedResource.equipment.push(found);
+                    saveResourceEquipment();
+                }
+            }
+            $scope.equipmentPicker.selectedId = null;
+        };
+
+        $scope.removeEquipment = (id: number): void => {
+            if (!$scope.editedResource.equipment) { return; }
+            $scope.editedResource.equipment = $scope.editedResource.equipment.filter((e: any) => e.id !== id);
+            saveResourceEquipment();
+        };
+
+        $scope.createAndAddEquipment = async (): Promise<void> => {
+            const name: string = ($scope.newEquipmentName || '').trim();
+            const schoolId: string = $scope.currentResourceType && $scope.currentResourceType.school_id;
+            if (!name || !schoolId) { return; }
+            try {
+                const {data}: any = await http.post('/rbs/equipment', {school_id: schoolId, name});
+                $scope.equipmentCatalog.push(data);
+                $scope.newEquipmentName = '';
+                $scope.equipmentPicker.selectedId = data.id;
+                $scope.addEquipment();
+            } catch (e) {
+                notify.error(lang.translate('rbs.resource.edit.equipment.save.error'));
+            }
+            safeApply($scope);
         };
 
         $scope.shareCurrentResourceType = function () {

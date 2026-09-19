@@ -40,6 +40,19 @@
 		},
 		"quantity": {
 			"type": "integer"
+		},
+		"capacity": {
+			"description": "Capacité d'accueil de la salle (nombre de places), distincte de quantity",
+			"type": ["integer", "null"],
+			"minimum": 0
+		},
+		"is_mobile": {
+			"description": "Matériel mobile (chariot, vidéoprojecteur mobile) plutôt qu'une salle fixe",
+			"type": "boolean"
+		},
+		"requires_key": {
+			"description": "Accès à la ressource nécessitant une clé",
+			"type": "boolean"
 		}
 	},
 	"required": [
