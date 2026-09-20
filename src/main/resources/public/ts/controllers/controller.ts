@@ -1328,7 +1328,13 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
                     quantity: 1
                 };
             });
-            $scope.customTypesInput = '';
+            // Objet (pas une primitive nue) : le sous-écran est chargé dans un scope enfant par
+            // template.open(), qui shadowe silencieusement toute primitive liée en ng-model (le
+            // scope enfant écrit sa propre copie, jamais visible du $scope fermé dans cette
+            // fonction) — même piège que réglé pour item.checked/item.quantity du ng-repeat
+            // ci-dessus, déjà des objets et donc épargnés. Confirmé : la saisie libre n'avait
+            // strictement aucun effet (aucune requête réseau émise au clic sur Enregistrer).
+            $scope.customTypesForm = { input: '' };
             $scope.currentErrors = [];
             $scope.display.processing = undefined;
             template.open('resources', 'resource/create-default-resource-types');
@@ -1353,7 +1359,7 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
 
             // Saisie libre : une ligne par salle, au format "Nom" ou "Nom - CATEGORIE".
             // Catégorie absente -> GENERAL (l'admin pourra la corriger ensuite dans l'édition du type).
-            (($scope.customTypesInput || '').split('\n')).forEach(function (line) {
+            (($scope.customTypesForm.input || '').split('\n')).forEach(function (line) {
                 line = line.trim();
                 if (!line) return;
                 var parts = line.split(' - ');
