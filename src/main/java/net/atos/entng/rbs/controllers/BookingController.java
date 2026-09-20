@@ -207,11 +207,31 @@ public class BookingController extends ControllerHelper {
 	private Handler<Either<String, JsonArray>> getBookingCreationResponse(UserInfos user, HttpServerRequest request, boolean isCreation) {
 		return event -> {
 			if (event.isRight()) {
-				if (event.right().getValue() != null && event.right().getValue().size() > 0) {
+				// Le service place toujours les créations en tête du tableau (cf.
+				// BookingServiceSqlImpl::createBooking) — si le tout premier élément est un
+				// REFUSED, c'est qu'AUCUNE création n'a réussi (seuls des refus automatiques de
+				// réservations concurrentes ont eu lieu, ce qui ne devrait jamais arriver seul :
+				// on ne veut jamais renvoyer un 200 avec la réservation refusée d'un tiers comme
+				// payload). Traiter ce cas comme un conflit, au même titre qu'un tableau vide.
+				boolean hasRealCreation = event.right().getValue() != null && event.right().getValue().size() > 0
+						&& REFUSED.status() != event.right().getValue().getJsonObject(0).getInteger("status", 0);
+				if (hasRealCreation) {
 					List<JsonObject> bookings = event.right().getValue().stream().map(JsonObject.class::cast).collect(Collectors.toList());
 					bookings.forEach(booking -> {
-						notifyBookingCreatedOrUpdated(request, user, booking, isCreation);
 						final String bookingId = Long.toString(booking.getLong("id", 0L));
+						// Mécanisme de priorité (cf. BookingServiceSqlImpl::getRefuseConcurrentCreatedBookings) :
+						// une demande concurrente encore en attente a pu être refusée automatiquement par
+						// cette même création — notifier son propriétaire avec le même template qu'un refus
+						// manuel (processBooking), pas comme si SA réservation venait d'être créée.
+						if (REFUSED.status() == booking.getInteger("status", 0)) {
+							bookingService.getResourceName(bookingId, resEvent -> {
+								if (resEvent.isRight() && resEvent.right().getValue() != null) {
+									notifyBookingProcessed(request, user, booking, resEvent.right().getValue().getString("resource_name"));
+								}
+							});
+							return;
+						}
+						notifyBookingCreatedOrUpdated(request, user, booking, isCreation);
 						bookingService.getResourceName(bookingId, resEvent -> {
 							if (resEvent.isRight() && resEvent.right().getValue() != null) {
 								notifyStructureCalendarIfValidated(booking, resEvent.right().getValue().getString("resource_name"),

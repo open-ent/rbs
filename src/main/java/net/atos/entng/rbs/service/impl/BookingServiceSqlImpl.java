@@ -132,6 +132,20 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 		// Lock query to avoid race condition
 		statementsBuilder.raw(LOCK_BOOKING_QUERY);
 
+		final int nbSlots = booking.getSlots().size();
+
+		// Mécanisme de priorité : si l'utilisateur courant peut lui-même valider sur cette
+		// ressource (cf. appendCanValidateCondition), sa nouvelle réservation ne doit pas être
+		// bloquée par une simple demande encore en attente (CREATED) d'un autre utilisateur —
+		// cette demande est refusée automatiquement (même comportement que la validation
+		// manuelle d'une réservation concurrente, cf. processBooking). Exécuté AVANT les inserts
+		// ci-dessous, dans la même transaction, pour que getCreationBooking() (dont le blocage de
+		// conflit ignore déjà les REFUSED) ne voie plus ces demandes comme un obstacle.
+		booking.getSlots().forEach(slot -> {
+			JsonObject refuseStatement = getRefuseConcurrentCreatedBookings(resourceId, slot, user);
+			statementsBuilder.prepared(refuseStatement.getString("query"), refuseStatement.getJsonArray("values"));
+		});
+
 		booking.getSlots().forEach(slot-> {
 			JsonObject statement = getCreationBooking(resourceId, booking, slot, user);
 			statementsBuilder.prepared(statement.getString("query"), statement.getJsonArray("values"));
@@ -150,14 +164,26 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 				statementsResults.remove(0);
 				statementsResults.remove(0);
 
-				JsonArray bookings = new JsonArray();
-				// Looping our statementsResult as each JsonObject is inside a JsonArray then we clear data by creating
-				// new JsonArray
+				// Les nbSlots premiers statements restants sont les refus automatiques (0 à
+				// plusieurs lignes chacun), les nbSlots suivants sont les créations elles-mêmes
+				// (0 ou 1 ligne chacun, cf. WHERE NOT EXISTS de getCreationBooking). Le contrôleur
+				// (getBookingCreationResponse) fait `renderJson(..., bookings.getJsonObject(0))` en
+				// s'attendant à LA réservation créée en 1er élément — les créations doivent donc
+				// rester devant les refus dans le tableau final, quel que soit l'ordre d'exécution
+				// SQL (refus avant créations, nécessaire pour ne plus bloquer le WHERE NOT EXISTS).
+				JsonArray refusedRows = new JsonArray();
+				JsonArray createdRows = new JsonArray();
 				for (int i = 0; i < statementsResults.size(); i++) {
-					if (Boolean.FALSE.equals(statementsResults.getJsonArray(i).isEmpty())) {
-						bookings.add(statementsResults.getJsonArray(i).getJsonObject(0));
+					JsonArray statementRows = statementsResults.getJsonArray(i);
+					JsonArray target = (i < nbSlots) ? refusedRows : createdRows;
+					for (int j = 0; j < statementRows.size(); j++) {
+						target.add(statementRows.getJsonObject(j));
 					}
 				}
+
+				JsonArray bookings = new JsonArray();
+				bookings.addAll(createdRows);
+				bookings.addAll(refusedRows);
 				handler.handle(new Either.Right<>(bookings));
 			}
 		});
@@ -255,6 +281,43 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 		// liste demandée (une ressource absente de la réponse = bloquée par le WHERE NOT EXISTS).
 		query.append(" RETURNING id, resource_id, quantity, status, to_char(start_date, '").append(DATE_FORMAT)
 				.append("') AS start_date, to_char(end_date, '").append(DATE_FORMAT).append("') AS end_date");
+
+		return new JsonObject().put("query", query).put("values", values);
+	}
+
+	/**
+	 * Refuse automatiquement toute demande encore en attente (CREATED, jamais VALIDATED — écraser
+	 * une réservation déjà confirmée reste réservé à processBooking) qui chevauche le créneau
+	 * demandé sur cette ressource, SEULEMENT si l'utilisateur courant peut lui-même valider une
+	 * réservation sur cette ressource (même condition que getCreationBooking, cf.
+	 * appendCanValidateCondition — sinon un simple enseignant pourrait faire refuser les demandes
+	 * des autres en créant la sienne). Exécutée avant l'insert de getCreationBooking, dans la même
+	 * transaction, pour que celui-ci ne soit plus bloqué par ces demandes désormais REFUSED.
+	 */
+	private JsonObject getRefuseConcurrentCreatedBookings(final String resourceId, final Slot slot, final UserInfos user) {
+		Object rId = parseId(resourceId);
+		StringBuilder query = new StringBuilder();
+		JsonArray values = new JsonArray();
+
+		// appendCanValidateCondition suppose un FROM portant les alias r (rbs.resource) et t2
+		// (rbs.resource_type, joint sur r.type_id = t2.id) — d'où le FROM ci-dessous, requis par
+		// la syntaxe UPDATE ... FROM de PostgreSQL pour joindre b (rbs.booking) à r/t2.
+		JsonArray canValidateValues = new JsonArray();
+		String canValidateCondition = appendCanValidateCondition(canValidateValues, user);
+
+		query.append("UPDATE rbs.booking b SET status = ?, modified = NOW()")
+				.append(" FROM rbs.resource AS r INNER JOIN rbs.resource_type AS t2 ON r.type_id = t2.id")
+				.append(" WHERE r.id = b.resource_id AND b.resource_id = ? AND b.status = ?")
+				.append(" AND b.start_date < ? AND b.end_date > ?")
+				.append(" AND r.id = ? AND ").append(canValidateCondition);
+		values.add(REFUSED.status()).add(rId).add(CREATED.status())
+				.add(toSQLTimestamp(slot.getEndUTC()))
+				.add(toSQLTimestamp(slot.getStartUTC()))
+				.add(rId);
+		values.addAll(canValidateValues);
+
+		query.append(" RETURNING b.id, b.resource_id, b.owner, b.status, to_char(b.start_date, '").append(DATE_FORMAT)
+				.append("') AS start_date, to_char(b.end_date, '").append(DATE_FORMAT).append("') AS end_date");
 
 		return new JsonObject().put("query", query).put("values", values);
 	}
@@ -706,6 +769,26 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 
 		processQuery.append(returningClause);
 		statementsBuilder.prepared(processQuery.toString(), processValues);
+
+		// 4. Valider une réservation refuse automatiquement les autres demandes encore en attente
+		// (CREATED) qui chevauchent le même créneau sur la même ressource — mécanisme de priorité
+		// (ex. la direction valide sa propre demande, les demandes concurrentes des enseignants
+		// tombent). Le contrôleur (BookingController::processBooking) attend déjà ce 4e statement
+		// pour notifier ces réservations ("concurrentBookings", results.size() >= 4) — jamais
+		// implémenté côté service jusqu'ici. Uniquement quand on VALIDE (pas quand on refuse/
+		// suspend une réservation, qui ne doit rien changer d'autre).
+		if (newStatus == VALIDATED.status()) {
+			StringBuilder concurrentQuery = new StringBuilder();
+			JsonArray concurrentValues = new JsonArray();
+			concurrentQuery.append("UPDATE rbs.booking b2 SET status = ?, modified = NOW() ")
+					.append("WHERE b2.resource_id = ? AND b2.id <> ? AND b2.status = ? ")
+					.append("AND b2.start_date < (SELECT end_date FROM rbs.booking WHERE id = ?) ")
+					.append("AND b2.end_date > (SELECT start_date FROM rbs.booking WHERE id = ?) ")
+					.append(returningClause.toString().replace("start_date AT TIME ZONE", "b2.start_date AT TIME ZONE")
+							.replace("end_date AT TIME ZONE", "b2.end_date AT TIME ZONE"));
+			concurrentValues.add(REFUSED.status()).add(rId).add(bId).add(CREATED.status()).add(bId).add(bId);
+			statementsBuilder.prepared(concurrentQuery.toString(), concurrentValues);
+		}
 
 		// Send queries to event bus
 		Sql.getInstance().transaction(statementsBuilder.build(), validResultsHandler(handler));
