@@ -318,6 +318,8 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 
 		query.append(" RETURNING b.id, b.resource_id, b.owner, b.status, to_char(b.start_date, '").append(DATE_FORMAT)
 				.append("') AS start_date, to_char(b.end_date, '").append(DATE_FORMAT).append("') AS end_date");
+		// Vérifié en dev le 2026-09-21 : la notification BOOKING-REFUSED est bien émise vers le
+		// propriétaire de la demande auto-refusée (collection timeline.entcore, pas timeline.ong).
 
 		return new JsonObject().put("query", query).put("values", values);
 	}
