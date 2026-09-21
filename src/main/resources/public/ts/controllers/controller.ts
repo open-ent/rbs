@@ -517,6 +517,130 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
             $scope.safeApply();
         };
 
+        // Onglet "Disponibilité" : consulter les créneaux déjà occupés par l'Emploi du temps ET
+        // les réservations RBS sur une salle donnée, sans passer par le formulaire de réservation
+        // (écart #1 du scénario BFC 1.3 vs Pronote — "voir ce qui est déjà pris avant de
+        // demander"). Combine l'endpoint EDT existant (déjà utilisé côté formulaire pour un
+        // avertissement ponctuel, cf. checkEdtRoomConflict) avec le nouveau filtre par période de
+        // GET /rbs/resource/:id/bookings — mais ici sur toute une semaine, pas un seul créneau.
+        $scope.roomSchedule = {
+            resources: [],
+            selectedResource: null,
+            weekStart: moment().startOf('week'),
+            slots: [],
+            loading: false,
+        };
+
+        $scope.showRoomSchedule = function () {
+            $scope.display.admin = false;
+            $scope.display.moderation = false;
+            delete $scope.bookings.filters.unprocessed;
+            $scope.display.list = undefined;
+            $scope.display.roomSchedule = true;
+            if ($scope.roomSchedule.resources.length === 0) {
+                loadRoomScheduleResources();
+            }
+            template.open('bookings', 'resource/room-schedule');
+            $scope.safeApply();
+        };
+
+        async function loadRoomScheduleResources(): Promise<void> {
+            // Appel direct plutôt que model.resourceTypes (dont le sync() n'est déclenché que par
+            // model.refresh(), lui-même appelé seulement en entrant en mode gestion — jamais sur
+            // la vue calendrier par défaut : rester dépendant de ce modèle partagé aurait laissé
+            // le sélecteur vide tant que l'utilisateur n'a jamais ouvert "Gérer les types").
+            try {
+                const [{data: types}, {data: allResources}]: any = await Promise.all([
+                    http.get('/rbs/types'),
+                    http.get('/rbs/resources'),
+                ]);
+                const typeById: {[id: number]: any} = {};
+                (types || []).forEach(function (t: any) { typeById[t.id] = t; });
+                const resources = (allResources || [])
+                    .filter(function (r: any) { return typeById[r.type_id]; })
+                    .map(function (r: any) {
+                        const type = typeById[r.type_id];
+                        return {
+                            id: r.id,
+                            name: r.name,
+                            typeName: type.name,
+                            structureId: type.school_id,
+                        };
+                    });
+                resources.sort(function (a: any, b: any) { return a.name.localeCompare(b.name); });
+                $scope.roomSchedule.resources = resources;
+                $scope.safeApply();
+            } catch (e) {
+                $scope.roomSchedule.resources = [];
+            }
+        }
+
+        $scope.changeRoomScheduleWeek = function (offsetWeeks: number): void {
+            $scope.roomSchedule.weekStart = $scope.roomSchedule.weekStart.clone().add(offsetWeeks, 'weeks');
+            $scope.loadRoomSchedule();
+        };
+
+        $scope.loadRoomSchedule = async function (): Promise<void> {
+            const resource = $scope.roomSchedule.selectedResource;
+            $scope.roomSchedule.slots = [];
+            if (!resource) {
+                return;
+            }
+            $scope.roomSchedule.loading = true;
+            const weekStart = $scope.roomSchedule.weekStart.clone();
+            const weekEnd = weekStart.clone().add(7, 'days');
+            const startIso = weekStart.format('YYYY-MM-DDTHH:mm:ss');
+            const endIso = weekEnd.format('YYYY-MM-DDTHH:mm:ss');
+            const slots: any[] = [];
+
+            try {
+                const {data: courses}: any = await http.get(
+                    `/edt/structures/${resource.structureId}/room-conflicts/${startIso}/${endIso}`,
+                    {params: {room: resource.name}}
+                );
+                (courses || []).forEach(function (course: any) {
+                    slots.push({
+                        source: 'edt',
+                        start: moment(course.startDate, 'YYYY-MM-DD HH:mm:ss'),
+                        end: moment(course.endDate, 'YYYY-MM-DD HH:mm:ss'),
+                        label: lang.translate('rbs.roomSchedule.source.edt'),
+                    });
+                });
+            } catch (e) {
+                // Avertissement non bloquant, même logique que checkEdtRoomConflict : une salle
+                // sans correspondance exacte de libellé côté EDT ne doit jamais bloquer l'écran.
+            }
+
+            try {
+                const {data: bookings}: any = await http.get(
+                    `/rbs/resource/${resource.id}/bookings`,
+                    {params: {startAt: startIso, endAt: endIso}}
+                );
+                (bookings || []).forEach(function (booking: any) {
+                    if (booking.status === 3 /* REFUSED */) {
+                        return;
+                    }
+                    // GET /resource/:id/bookings renvoie start_date/end_date en ISO 8601 complet
+                    // ("2026-09-22T12:00:00.000") — pas le format "DD/MM/YY HH:mm" utilisé
+                    // ailleurs dans ce fichier pour la RÉPONSE de création, format différent.
+                    // moment() sans 2e argument parse l'ISO nativement.
+                    slots.push({
+                        source: 'rbs',
+                        start: moment(booking.start_date),
+                        end: moment(booking.end_date),
+                        label: booking.booking_reason || lang.translate('rbs.roomSchedule.source.rbs'),
+                    });
+                });
+            } catch (e) {
+                // idem : ne jamais bloquer l'écran sur un souci de lecture RBS.
+            }
+
+            slots.sort(function (a, b) { return a.start.valueOf() - b.start.valueOf(); });
+            $scope.roomSchedule.slots = slots;
+            $scope.roomSchedule.loading = false;
+            $scope.safeApply();
+        };
+
         // Onglet Modération : liste des réservations à traiter (droit modérateur `process`).
         $scope.showModeration = function () {
             $scope.display.admin = false;

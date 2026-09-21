@@ -1,0 +1,39 @@
+<div class="row" guard-root="roomScheduleRoot">
+	<h2><i18n>rbs.roomSchedule.title</i18n></h2>
+
+	<article class="twelve cell">
+		<p class="info"><i18n>rbs.roomSchedule.help</i18n></p>
+
+		<div class="row">
+			<label class="three cell"><i18n>rbs.roomSchedule.pick.resource</i18n></label>
+			<select class="nine cell" ng-model="roomSchedule.selectedResource" ng-change="loadRoomSchedule()"
+					ng-options="resource as resource.name + ' (' + resource.typeName + ')' for resource in roomSchedule.resources">
+				<option value="" disabled selected><i18n>rbs.roomSchedule.pick.resource.placeholder</i18n></option>
+			</select>
+		</div>
+
+		<div class="row" ng-if="roomSchedule.selectedResource">
+			<button class="right-magnet" ng-click="changeRoomScheduleWeek(-1)">
+				<i18n>rbs.roomSchedule.week.previous</i18n>
+			</button>
+			<span class="cell">[[roomSchedule.weekStart.format('DD/MM/YYYY')]]</span>
+			<button class="right-magnet" ng-click="changeRoomScheduleWeek(1)">
+				<i18n>rbs.roomSchedule.week.next</i18n>
+			</button>
+		</div>
+
+		<div class="row" ng-if="roomSchedule.selectedResource && !roomSchedule.loading && roomSchedule.slots.length === 0">
+			<p class="info"><i18n>rbs.roomSchedule.empty</i18n></p>
+		</div>
+
+		<table class="list-view twelve cell" ng-if="roomSchedule.slots.length > 0">
+			<tbody>
+				<tr ng-repeat="slot in roomSchedule.slots" ng-class="{'room-schedule-edt': slot.source === 'edt', 'room-schedule-rbs': slot.source === 'rbs'}">
+					<td class="two">[[slot.start.format('dddd DD/MM')]]</td>
+					<td class="two">[[slot.start.format('HH:mm')]] - [[slot.end.format('HH:mm')]]</td>
+					<td class="two">[[slot.label]]</td>
+				</tr>
+			</tbody>
+		</table>
+	</article>
+</div>
