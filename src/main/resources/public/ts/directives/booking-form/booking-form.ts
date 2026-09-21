@@ -291,7 +291,12 @@ export const bookingForm = ng.directive('bookingForm', ['BookingEventService', '
                 vm.initBookingDates(vm.editedBooking.startMoment, vm.editedBooking.endMoment);
 
                 // vm.display.showPanel = true;
-                $scope.$apply();
+                // $applyAsync (pas $apply) : cette fonction est appelée depuis $onInit, dans une
+                // chaîne async/await qui enchaîne plusieurs digests imbriqués (autoSelectType
+                // AndResource -> autoSelectResource) — un $apply synchrone ici peut retomber
+                // pendant qu'un digest précédent tourne encore ("$digest already in progress"),
+                // notamment quand autoSelectTypeAndResource se termine tôt (aucune ressource).
+                $scope.$applyAsync();
             };
 
             vm.newBookingCalendar = async (): Promise<void> => {
@@ -329,7 +334,7 @@ export const bookingForm = ng.directive('bookingForm', ['BookingEventService', '
                 vm.bookings.syncForShowList();
                 vm.initBookingDates(vm.editedBooking.startMoment, vm.editedBooking.endMoment);
                 vm.displayLightbox = true;
-                $scope.$apply();
+                $scope.$applyAsync();
             };
 
             // Init a new booking
@@ -347,7 +352,7 @@ export const bookingForm = ng.directive('bookingForm', ['BookingEventService', '
                 if (vm.resourceTypes.first() === undefined || vm.resourceTypes.first().moderators === undefined) {
                     vm.resourceTypes.forEach(function (resourceType) {
                         resourceType.getModerators(function () {
-                            $scope.$apply('resourceTypes');
+                            $scope.$applyAsync();
                         });
                     });
                 }
@@ -372,7 +377,7 @@ export const bookingForm = ng.directive('bookingForm', ['BookingEventService', '
                 else {
                     notify.error(lang.translate('rbs.booking.warning.no.types'));
                 }
-                $scope.$apply();
+                $scope.$applyAsync();
             };
 
             vm.autoSelectResource = async (): Promise<void> => {
@@ -403,7 +408,7 @@ export const bookingForm = ng.directive('bookingForm', ['BookingEventService', '
                         else {
                             vm.editedBooking.type.slotprofile = undefined;
                         }
-                        $scope.$apply();
+                        $scope.$applyAsync();
                     });
                 }
                 else if (vm.saveTime) {
@@ -416,7 +421,7 @@ export const bookingForm = ng.directive('bookingForm', ['BookingEventService', '
                     vm.booking.endTime.set('minute', 0);
                 }
                 vm.display.processing = false;
-                $scope.$apply();
+                $scope.$applyAsync();
             };
 
             vm.initBookingDates = (startMoment, endMoment): void => {
@@ -532,7 +537,7 @@ export const bookingForm = ng.directive('bookingForm', ['BookingEventService', '
                 await vm.editedBooking.resource.syncResourceAvailabilities();
                 vm.updatePeriodicSummary();
 
-                $scope.$apply();
+                $scope.$applyAsync();
             };
 
             vm.updatePeriodicSummary = (): void => {
