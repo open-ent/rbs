@@ -524,7 +524,11 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
         // avertissement ponctuel, cf. checkEdtRoomConflict) avec le nouveau filtre par période de
         // GET /rbs/resource/:id/bookings — mais ici sur toute une semaine, pas un seul créneau.
         $scope.roomSchedule = {
+            types: [],
             resources: [],
+            selectedType: null,
+            // Sélection : soit une ressource précise (objet), soit 'ALL' (toutes les ressources
+            // du type sélectionné, regroupées avec une colonne Ressource dans le tableau).
             selectedResource: null,
             weekStart: moment().startOf('week'),
             pickedDate: new Date(),
@@ -567,12 +571,23 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
                         return {
                             id: r.id,
                             name: r.name,
+                            typeId: type.id,
                             typeName: type.name,
                             structureId: type.school_id,
                         };
                     });
                 resources.sort(function (a: any, b: any) { return a.name.localeCompare(b.name); });
                 $scope.roomSchedule.resources = resources;
+                // Un type n'apparaît que s'il a au moins une ressource (cohérent avec le filtre
+                // ci-dessus) — permet de choisir "toutes les ressources de ce type" plutôt
+                // qu'une seule, en une fois.
+                const typesWithResources: {[id: number]: {id: number; name: string}} = {};
+                resources.forEach(function (r: any) {
+                    typesWithResources[r.typeId] = {id: r.typeId, name: r.typeName};
+                });
+                $scope.roomSchedule.types = Object.keys(typesWithResources)
+                    .map(function (id) { return typesWithResources[Number(id)]; })
+                    .sort(function (a, b) { return a.name.localeCompare(b.name); });
                 $scope.safeApply();
             } catch (e) {
                 $scope.roomSchedule.resources = [];
@@ -593,21 +608,11 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
             $scope.loadRoomSchedule();
         };
 
-        $scope.loadRoomSchedule = async function (): Promise<void> {
-            const resource = $scope.roomSchedule.selectedResource;
-            $scope.roomSchedule.slots = [];
-            if (!resource) {
-                return;
-            }
-            $scope.roomSchedule.loading = true;
-            const rangeStart = $scope.roomSchedule.mode === 'day'
-                ? moment($scope.roomSchedule.pickedDate).startOf('day')
-                : $scope.roomSchedule.weekStart.clone();
-            const rangeEnd = $scope.roomSchedule.mode === 'day'
-                ? rangeStart.clone().add(1, 'day')
-                : rangeStart.clone().add(7, 'days');
-            const startIso = rangeStart.format('YYYY-MM-DDTHH:mm:ss');
-            const endIso = rangeEnd.format('YYYY-MM-DDTHH:mm:ss');
+        // Agrégation EDT+RBS pour UNE ressource sur la période donnée — factorisé pour être
+        // appelé soit une fois (ressource précise), soit une fois par ressource du type
+        // sélectionné (mode "toutes les ressources"), auquel cas chaque créneau porte en plus
+        // le nom de la ressource concernée pour les distinguer dans le tableau.
+        async function fetchSlotsForResource(resource: any, startIso: string, endIso: string): Promise<any[]> {
             const slots: any[] = [];
 
             try {
@@ -621,11 +626,13 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
                         start: moment(course.startDate, 'YYYY-MM-DD HH:mm:ss'),
                         end: moment(course.endDate, 'YYYY-MM-DD HH:mm:ss'),
                         label: lang.translate('rbs.roomSchedule.source.edt'),
+                        resourceName: resource.name,
                     });
                 });
             } catch (e) {
-                // Avertissement non bloquant, même logique que checkEdtRoomConflict : une salle
-                // sans correspondance exacte de libellé côté EDT ne doit jamais bloquer l'écran.
+                // Avertissement non bloquant, même logique que checkEdtRoomConflict : une
+                // ressource sans correspondance exacte de libellé côté EDT ne doit jamais
+                // bloquer l'écran.
             }
 
             try {
@@ -646,16 +653,52 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
                         start: moment(booking.start_date),
                         end: moment(booking.end_date),
                         label: booking.booking_reason || lang.translate('rbs.roomSchedule.source.rbs'),
+                        resourceName: resource.name,
                     });
                 });
             } catch (e) {
                 // idem : ne jamais bloquer l'écran sur un souci de lecture RBS.
             }
 
+            return slots;
+        }
+
+        $scope.loadRoomSchedule = async function (): Promise<void> {
+            const selection = $scope.roomSchedule.selectedResource;
+            $scope.roomSchedule.slots = [];
+            if (!selection) {
+                return;
+            }
+            $scope.roomSchedule.loading = true;
+            const rangeStart = $scope.roomSchedule.mode === 'day'
+                ? moment($scope.roomSchedule.pickedDate).startOf('day')
+                : $scope.roomSchedule.weekStart.clone();
+            const rangeEnd = $scope.roomSchedule.mode === 'day'
+                ? rangeStart.clone().add(1, 'day')
+                : rangeStart.clone().add(7, 'days');
+            const startIso = rangeStart.format('YYYY-MM-DDTHH:mm:ss');
+            const endIso = rangeEnd.format('YYYY-MM-DDTHH:mm:ss');
+
+            // selection === 'ALL' : toutes les ressources du type actuellement sélectionné.
+            const targets = selection === 'ALL'
+                ? $scope.roomSchedule.resources.filter(function (r: any) { return r.typeId === $scope.roomSchedule.selectedType; })
+                : [selection];
+
+            const perResource = await Promise.all(
+                targets.map(function (r: any) { return fetchSlotsForResource(r, startIso, endIso); })
+            );
+            const slots = ([] as any[]).concat(...perResource);
             slots.sort(function (a, b) { return a.start.valueOf() - b.start.valueOf(); });
             $scope.roomSchedule.slots = slots;
             $scope.roomSchedule.loading = false;
             $scope.safeApply();
+        };
+
+        // Choix d'un type : bascule par défaut sur "toutes les ressources de ce type" (vue
+        // globale), une ressource précise reste un choix explicite ensuite dans le sélecteur.
+        $scope.pickRoomScheduleType = function (): void {
+            $scope.roomSchedule.selectedResource = $scope.roomSchedule.selectedType ? 'ALL' : null;
+            $scope.loadRoomSchedule();
         };
 
         // Onglet Modération : liste des réservations à traiter (droit modérateur `process`).
