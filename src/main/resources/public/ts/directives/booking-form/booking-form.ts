@@ -363,19 +363,20 @@ export const bookingForm = ng.directive('bookingForm', ['BookingEventService', '
                 vm.editedBooking.resource = undefined;
                 vm.selectedSlotStart = undefined;
                 vm.selectedSlotEnd = undefined;
+                // Pas de notify.error ici dans les deux cas ci-dessous (aucun type avec
+                // ressource / structure sans type) : vm.editedBooking.type reste undefined,
+                // ce qui affiche déjà l'avertissement persistant du template (rbs.booking.
+                // warning.no.types, "Aucun type de ressources disponible... pour cet
+                // établissement") — un toast temporaire en plus était redondant et, pour le
+                // premier cas, faussement libellé "pour ce type" alors qu'aucun type précis
+                // n'est en cause.
                 let selectedType = undefined;
                 if (vm.selectedStructure.types.length > 0) {
                     selectedType = vm.selectedStructure.types.find(t => !t.resources.isEmpty());
-                    if (!selectedType) {
-                        notify.error(lang.translate('rbs.booking.warning.no.resources'));
-                    }
-                    else {
+                    if (selectedType) {
                         vm.editedBooking.type = selectedType;
                         await vm.autoSelectResource();
                     }
-                }
-                else {
-                    notify.error(lang.translate('rbs.booking.warning.no.types'));
                 }
                 $scope.$applyAsync();
             };
