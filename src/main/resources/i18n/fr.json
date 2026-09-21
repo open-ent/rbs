@@ -306,6 +306,7 @@
   "rbs.header.periodic.pick": "3 - Configurer la périodicité",
   "rbs.header.periodic.picked": "3 - Périodicité : ",
   "rbs.roomSchedule.menu": "Disponibilité",
+  "rbs.roomSchedule.check": "Vérifier les disponibilités de la ressource",
   "rbs.roomSchedule.title": "Disponibilité d'une salle",
   "rbs.roomSchedule.help": "Consultez les créneaux déjà occupés (emploi du temps et réservations) avant de faire une demande.",
   "rbs.roomSchedule.pick.resource": "Choisir une salle",
