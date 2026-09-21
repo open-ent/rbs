@@ -235,6 +235,7 @@
                         <div class="bottom-spacing-three">
                             <label class="right-spacing cell"><i18n>rbs.booking.edit.quantity.label</i18n></label>
                             <input class="input-size" type="number" ng-model="vm.editedBooking.quantity"
+                                   ng-disabled="vm.isBookingQuantityWrong(vm.editedBooking)"
                                    min="1" max="[[vm.getQuantityDispo(vm.editedBooking, vm.editedBooking)]]"/>
                         </div>
 

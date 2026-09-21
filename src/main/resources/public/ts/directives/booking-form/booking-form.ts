@@ -150,6 +150,19 @@ export const bookingForm = ng.directive('bookingForm', ['BookingEventService', '
                     () => vm.editedBooking && vm.editedBooking.startMoment && vm.editedBooking.startMoment.valueOf(),
                     () => vm.editedBooking && vm.editedBooking.endMoment && vm.editedBooking.endMoment.valueOf()
                 ], vm.checkEdtRoomConflict);
+
+                // Quand "Il n'y a plus de ressource disponible pour ce créneau" s'affiche, le
+                // champ Quantité est désactivé (cf template) mais gardait sa dernière valeur
+                // saisie, contradictoire avec min="1" alors que 0 place est disponible :
+                // on la force à 0 tant que la situation reste bloquante.
+                $scope.$watch(
+                    () => vm.editedBooking && vm.isBookingQuantityWrong(vm.editedBooking),
+                    (wrong: boolean) => {
+                        if (wrong && vm.editedBooking) {
+                            vm.editedBooking.quantity = 0;
+                        }
+                    }
+                );
             };
 
             // Avertissement non bloquant (pas de filtre par salle natif côté EDT — relais serveur
