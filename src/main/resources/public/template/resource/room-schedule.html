@@ -16,7 +16,8 @@
 			<button class="right-magnet" ng-click="changeRoomScheduleWeek(-1)">
 				<i18n>rbs.roomSchedule.week.previous</i18n>
 			</button>
-			<span class="cell">[[roomSchedule.weekStart.format('DD/MM/YYYY')]]</span>
+			<span class="cell" ng-if="roomSchedule.mode === 'week'">[[roomSchedule.weekStart.format('DD/MM/YYYY')]]</span>
+			<span class="cell" ng-if="roomSchedule.mode === 'day'">[[roomSchedule.pickedDate | date:'dd/MM/yyyy']]</span>
 			<button class="right-magnet" ng-click="changeRoomScheduleWeek(1)">
 				<i18n>rbs.roomSchedule.week.next</i18n>
 			</button>
@@ -26,7 +27,8 @@
 		</div>
 
 		<div class="row" ng-if="roomSchedule.selectedResource && !roomSchedule.loading && roomSchedule.slots.length === 0">
-			<p class="info"><i18n>rbs.roomSchedule.empty</i18n></p>
+			<p class="info" ng-if="roomSchedule.mode === 'week'"><i18n>rbs.roomSchedule.empty</i18n></p>
+			<p class="info" ng-if="roomSchedule.mode === 'day'"><i18n>rbs.roomSchedule.empty.day</i18n></p>
 		</div>
 
 		<table class="list-view twelve cell" ng-if="roomSchedule.slots.length > 0">

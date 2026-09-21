@@ -528,6 +528,9 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
             selectedResource: null,
             weekStart: moment().startOf('week'),
             pickedDate: new Date(),
+            // 'week' (navigation précédente/suivante) ou 'day' (date choisie directement) : la
+            // vue et le message "aucun créneau" s'adaptent à la granularité demandée.
+            mode: 'week',
             slots: [],
             loading: false,
         };
@@ -577,15 +580,16 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
         }
 
         $scope.changeRoomScheduleWeek = function (offsetWeeks: number): void {
+            $scope.roomSchedule.mode = 'week';
             $scope.roomSchedule.weekStart = $scope.roomSchedule.weekStart.clone().add(offsetWeeks, 'weeks');
             $scope.roomSchedule.pickedDate = $scope.roomSchedule.weekStart.clone().toDate();
             $scope.loadRoomSchedule();
         };
 
-        // Choix direct d'une date (plutôt que naviguer semaine par semaine) : va à la semaine qui
-        // la contient, comme la navigation précédente/suivante.
+        // Choix direct d'une date : bascule en vue "ce jour" (pas la semaine entière), plus
+        // pertinent pour vérifier une disponibilité ponctuelle qu'une navigation par semaine.
         $scope.pickRoomScheduleDate = function (): void {
-            $scope.roomSchedule.weekStart = moment($scope.roomSchedule.pickedDate).startOf('week');
+            $scope.roomSchedule.mode = 'day';
             $scope.loadRoomSchedule();
         };
 
@@ -596,10 +600,14 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
                 return;
             }
             $scope.roomSchedule.loading = true;
-            const weekStart = $scope.roomSchedule.weekStart.clone();
-            const weekEnd = weekStart.clone().add(7, 'days');
-            const startIso = weekStart.format('YYYY-MM-DDTHH:mm:ss');
-            const endIso = weekEnd.format('YYYY-MM-DDTHH:mm:ss');
+            const rangeStart = $scope.roomSchedule.mode === 'day'
+                ? moment($scope.roomSchedule.pickedDate).startOf('day')
+                : $scope.roomSchedule.weekStart.clone();
+            const rangeEnd = $scope.roomSchedule.mode === 'day'
+                ? rangeStart.clone().add(1, 'day')
+                : rangeStart.clone().add(7, 'days');
+            const startIso = rangeStart.format('YYYY-MM-DDTHH:mm:ss');
+            const endIso = rangeEnd.format('YYYY-MM-DDTHH:mm:ss');
             const slots: any[] = [];
 
             try {
