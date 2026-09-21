@@ -313,6 +313,7 @@
   "rbs.roomSchedule.pick.resource.placeholder": "-- Sélectionner --",
   "rbs.roomSchedule.week.previous": "Semaine précédente",
   "rbs.roomSchedule.week.next": "Semaine suivante",
+  "rbs.roomSchedule.pick.date": "Aller à une date",
   "rbs.roomSchedule.empty": "Aucun créneau occupé cette semaine pour cette salle.",
   "rbs.roomSchedule.source.edt": "Emploi du temps",
   "rbs.roomSchedule.source.rbs": "Réservation",

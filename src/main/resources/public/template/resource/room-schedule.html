@@ -20,6 +20,9 @@
 			<button class="right-magnet" ng-click="changeRoomScheduleWeek(1)">
 				<i18n>rbs.roomSchedule.week.next</i18n>
 			</button>
+			<label class="cell horizontal-spacing-twice"><i18n>rbs.roomSchedule.pick.date</i18n></label>
+			<date-picker class="two cell horizontal-spacing" ng-model="roomSchedule.pickedDate"
+						 ng-change="pickRoomScheduleDate()" past="true" exp="true"></date-picker>
 		</div>
 
 		<div class="row" ng-if="roomSchedule.selectedResource && !roomSchedule.loading && roomSchedule.slots.length === 0">

@@ -527,6 +527,7 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
             resources: [],
             selectedResource: null,
             weekStart: moment().startOf('week'),
+            pickedDate: new Date(),
             slots: [],
             loading: false,
         };
@@ -577,6 +578,14 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
 
         $scope.changeRoomScheduleWeek = function (offsetWeeks: number): void {
             $scope.roomSchedule.weekStart = $scope.roomSchedule.weekStart.clone().add(offsetWeeks, 'weeks');
+            $scope.roomSchedule.pickedDate = $scope.roomSchedule.weekStart.clone().toDate();
+            $scope.loadRoomSchedule();
+        };
+
+        // Choix direct d'une date (plutôt que naviguer semaine par semaine) : va à la semaine qui
+        // la contient, comme la navigation précédente/suivante.
+        $scope.pickRoomScheduleDate = function (): void {
+            $scope.roomSchedule.weekStart = moment($scope.roomSchedule.pickedDate).startOf('week');
             $scope.loadRoomSchedule();
         };
 
