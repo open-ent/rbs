@@ -470,6 +470,10 @@ i.add::before {
 }
 
 .rbs-resource-warning {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    margin-left: 0;
     text-align: center;
     font-weight: bold;
 }
