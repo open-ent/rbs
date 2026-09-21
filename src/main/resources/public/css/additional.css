@@ -470,9 +470,13 @@ i.add::before {
 }
 
 .rbs-resource-warning {
-    display: block;
+    /* !important nécessaire : la classe grid ".six" (width: 50%) partage la même spécificité
+       CSS et gagne selon l'ordre de chargement, qui varie visuellement selon qu'un <select>
+       voisin force un retour à la ligne ou non (largeur/alignement incohérents constatés). */
+    display: block !important;
     box-sizing: border-box;
-    width: 100%;
+    width: 100% !important;
+    flex: 0 0 100% !important;
     margin-left: 0;
     text-align: center;
     font-weight: bold;
