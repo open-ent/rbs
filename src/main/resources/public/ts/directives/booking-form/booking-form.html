@@ -35,7 +35,7 @@
                                         ng-change="vm.switchStructure(vm.selectedStructure)"
                                         ng-if="vm.selectedStructure !== undefined">
                                 </select>
-                                <div class="six cell warning"
+                                <div class="six cell warning rbs-resource-warning"
                                      ng-if="vm.structuresWithTypes.length < 1 && vm.sharedStructure.types < 1">
                                     <i18n>rbs.booking.warning.no.structure</i18n>
                                 </div>
@@ -50,7 +50,7 @@
                                             ng-change="vm.autoSelectResource();" required
                                             ng-if="vm.selectedStructure.types.length > 0">
                                     </select>
-                                    <div class="six cell warning" ng-if="!vm.editedBooking.type">
+                                    <div class="six cell warning rbs-resource-warning" ng-if="!vm.editedBooking.type">
                                         <i18n>rbs.booking.warning.no.types</i18n>
                                     </div>
                                 </div>
@@ -62,7 +62,7 @@
                                             ng-options="resource.name for resource in vm.editedBooking.type.resources.filterAvailable(vm.editedBooking.is_periodic)"
                                             required ng-if="vm.editedBooking.resource !== undefined" input-guard>
                                     </select>
-                                    <div class="six cell warning" ng-if="!vm.editedBooking.resource && !vm.display.processing">
+                                    <div class="six cell warning rbs-resource-warning" ng-if="!vm.editedBooking.resource && !vm.display.processing">
                                         <i18n>rbs.booking.warning.no.resources</i18n>
                                     </div>
                                 </div>

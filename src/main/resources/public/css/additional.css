@@ -468,3 +468,8 @@ i.add::before {
 .room-schedule.selected {
     opacity: .6;
 }
+
+.rbs-resource-warning {
+    text-align: center;
+    font-weight: bold;
+}
