@@ -1027,14 +1027,28 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 
 	@Override
 	public void listBookingsByResource(final String resourceId, final Handler<Either<String, JsonArray>> handler) {
+		listBookingsByResource(resourceId, null, null, handler);
+	}
+
+	@Override
+	public void listBookingsByResource(final String resourceId, final String startAt, final String endAt,
+			final Handler<Either<String, JsonArray>> handler) {
 		StringBuilder query = new StringBuilder();
+		JsonArray values = new JsonArray();
+
 		query.append("SELECT b.*, u.username AS owner_name, m.username AS moderator_name")
 				.append(" FROM rbs.booking AS b").append(" INNER JOIN rbs.users AS u ON b.owner = u.id")
-				.append(" LEFT JOIN rbs.users AS m on b.moderator_id = m.id").append(" WHERE b.resource_id = ?")
-				.append(" ORDER BY b.start_date, b.end_date");
-
-		JsonArray values = new JsonArray();
+				.append(" LEFT JOIN rbs.users AS m on b.moderator_id = m.id").append(" WHERE b.resource_id = ?");
 		values.add(parseId(resourceId));
+
+		// Filtre optionnel par période (vue de disponibilité, cf. BookingController) : chevauchement
+		// classique, mêmes bornes que getCreationBooking (start < fin demandée ET end > début demandé).
+		if (!StringUtils.isEmpty(startAt) && !StringUtils.isEmpty(endAt)) {
+			query.append(" AND b.start_date < ?::timestamp AND b.end_date > ?::timestamp");
+			values.add(endAt).add(startAt);
+		}
+
+		query.append(" ORDER BY b.start_date, b.end_date");
 
 		Sql.getInstance().prepared(query.toString(), values, validResultHandler(handler));
 	}

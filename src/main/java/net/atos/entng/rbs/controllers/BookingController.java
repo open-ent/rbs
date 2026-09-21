@@ -1083,14 +1083,20 @@ public class BookingController extends ControllerHelper {
 	}
 
 	@Get("/resource/:id/bookings")
-	@ApiDoc("List all bookings for a given resource")
+	@ApiDoc("List all bookings for a given resource, optionally restricted to a period via ?startAt=&endAt= (ISO datetime)")
 	@SecuredAction(value = "rbs.read", type = ActionType.RESOURCE)
 	@ResourceFilter(TypeAndResourceAppendPolicy.class)
 	public void listBookingsByResource(final HttpServerRequest request) {
 		UserUtils.getUserInfos(eb, request, user -> {
 			if (user != null) {
 				String resourceId = request.params().get("id");
-				bookingService.listBookingsByResource(resourceId, arrayResponseHandler(request));
+				// Query params optionnels : sans eux, comportement inchangé (tout l'historique de
+				// la ressource) — utilisés par la vue de disponibilité (agrégation EDT+RBS,
+				// cf. CourseController::getRoomConflicts côté EDT) pour ne charger qu'une période
+				// donnée (ex. la semaine affichée) plutôt que tout l'historique de la ressource.
+				String startAt = request.params().get("startAt");
+				String endAt = request.params().get("endAt");
+				bookingService.listBookingsByResource(resourceId, startAt, endAt, arrayResponseHandler(request));
 			} else {
 				log.debug("User not found in session.");
 				unauthorized(request);

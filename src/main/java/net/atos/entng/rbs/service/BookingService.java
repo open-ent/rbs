@@ -142,6 +142,13 @@ public interface BookingService extends CrudService {
 	public void listBookingsByResource(final String resourceId, final Handler<Either<String, JsonArray>> handler);
 
 	/**
+	 * @param startAt/endAt : ISO datetime, optionnels (null = pas de filtre, comportement identique
+	 *                        à listBookingsByResource(resourceId, handler) — tout l'historique).
+	 */
+	public void listBookingsByResource(final String resourceId, final String startAt, final String endAt,
+			final Handler<Either<String, JsonArray>> handler);
+
+	/**
 	 * Get the list of bookings unprocessed
 	 *
 	 * @param groupsAndUserIds : list of groups and id of users who are authorized
