@@ -24,6 +24,10 @@ interface IViewModel {
     edtRoomConflictWarning: string;
     checkEdtRoomConflict(): Promise<void>;
 
+    miniRoomSchedule: any;
+    toggleMiniRoomSchedule(): void;
+    loadMiniRoomSchedule(): Promise<void>;
+
     slotProfilesComponent: any;
     selectedSlotStart: any;
     selectedSlotEnd: any;
@@ -175,6 +179,88 @@ export const bookingForm = ng.directive('bookingForm', ['BookingEventService', '
                 } catch (e) {
                     vm.edtRoomConflictWarning = '';
                 }
+                if (vm.miniRoomSchedule.expanded) {
+                    await vm.loadMiniRoomSchedule();
+                }
+                $scope.$applyAsync();
+            };
+
+            // Mini-vue "Disponibilité" repliée par défaut, sous l'avertissement de conflit EDT
+            // ci-dessus : mêmes sources agrégées (EDT + RBS) que l'onglet dédié du menu
+            // principal (resource/room-schedule.html), mais sur la semaine du créneau en cours de
+            // saisie plutôt qu'une semaine navigable — seulement pour donner du contexte pendant
+            // la création, pas pour remplacer l'onglet de consultation complet.
+            vm.miniRoomSchedule = {
+                expanded: false,
+                loading: false,
+                slots: [],
+            };
+
+            vm.toggleMiniRoomSchedule = (): void => {
+                vm.miniRoomSchedule.expanded = !vm.miniRoomSchedule.expanded;
+                if (vm.miniRoomSchedule.expanded) {
+                    vm.loadMiniRoomSchedule();
+                }
+            };
+
+            vm.loadMiniRoomSchedule = async (): Promise<void> => {
+                const booking: any = vm.editedBooking;
+                const structureId: string = vm.selectedStructure && vm.selectedStructure.id;
+                const resourceId: any = booking && booking.resource && booking.resource.id;
+                const roomName: string = booking && booking.resource && booking.resource.name;
+                vm.miniRoomSchedule.slots = [];
+                if (!structureId || !roomName || !booking.startMoment) {
+                    return;
+                }
+                vm.miniRoomSchedule.loading = true;
+                const weekStart = moment(booking.startMoment).startOf('week');
+                const weekEnd = weekStart.clone().add(7, 'days');
+                const startIso = weekStart.format('YYYY-MM-DDTHH:mm:ss');
+                const endIso = weekEnd.format('YYYY-MM-DDTHH:mm:ss');
+                const slots: any[] = [];
+
+                try {
+                    const {data: courses}: any = await http.get(
+                        `/edt/structures/${structureId}/room-conflicts/${startIso}/${endIso}`,
+                        {params: {room: roomName}}
+                    );
+                    (courses || []).forEach(function (course: any) {
+                        slots.push({
+                            source: 'edt',
+                            start: moment(course.startDate, 'YYYY-MM-DD HH:mm:ss'),
+                            end: moment(course.endDate, 'YYYY-MM-DD HH:mm:ss'),
+                            label: lang.translate('rbs.roomSchedule.source.edt'),
+                        });
+                    });
+                } catch (e) {
+                    // Avertissement non bloquant, même logique que checkEdtRoomConflict.
+                }
+
+                if (resourceId) {
+                    try {
+                        const {data: bookings}: any = await http.get(
+                            `/rbs/resource/${resourceId}/bookings`,
+                            {params: {startAt: startIso, endAt: endIso}}
+                        );
+                        (bookings || []).forEach(function (b: any) {
+                            if (b.status === 3 /* REFUSED */) {
+                                return;
+                            }
+                            slots.push({
+                                source: 'rbs',
+                                start: moment(b.start_date),
+                                end: moment(b.end_date),
+                                label: b.booking_reason || lang.translate('rbs.roomSchedule.source.rbs'),
+                            });
+                        });
+                    } catch (e) {
+                        // idem : ne jamais bloquer le formulaire sur un souci de lecture RBS.
+                    }
+                }
+
+                slots.sort(function (a, b) { return a.start.valueOf() - b.start.valueOf(); });
+                vm.miniRoomSchedule.slots = slots;
+                vm.miniRoomSchedule.loading = false;
                 $scope.$applyAsync();
             };
 

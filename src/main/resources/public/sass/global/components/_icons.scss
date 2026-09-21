@@ -69,33 +69,4 @@ i {
     vertical-align: middle;
   }
 
-  // Icône "Disponibilité" du menu principal (top-menu.html) : même mécanisme visuel que
-  // show-admin/show-calendar/show-list (opacité réduite, s'accentue au survol/sélection),
-  // mais ceux-ci viennent d'un sprite du thème global introuvable pour un 4e symbole — on
-  // réutilise donc le même codepoint que ".date" ci-dessus (calendrier), déjà pertinent
-  // sémantiquement pour une vue de planning/disponibilité.
-  &.room-schedule {
-    display: inline-block;
-    height: 24px;
-    width: 24px;
-    margin-left: 15px;
-    vertical-align: middle;
-    opacity: .6;
-    cursor: pointer;
-
-    &::before {
-      @include fonticon();
-      content: '\e917';
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
-      background-image: none;
-      font-size: 22px;
-      color: $rbs-dimgrey;
-    }
-
-    &.selected {
-      opacity: 1;
-    }
-  }
-
 }

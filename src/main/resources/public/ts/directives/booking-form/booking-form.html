@@ -276,8 +276,32 @@
                             <div class="cell warning" ng-if="vm.slotNotFound">
                                 <i18n>rbs.booking.warning.slot.not.found</i18n>
                             </div>
-                            <div class="cell warning" ng-if="vm.edtRoomConflictWarning">
-                                [[vm.edtRoomConflictWarning]]
+                        </div>
+
+                        <!-- Avertissement de conflit EDT + mini-vue "Disponibilité" : hors du bloc
+                             "Booking end - with Slots" ci-dessus (qui ne s'affiche que si le type
+                             de ressource a un profil de créneaux prédéfinis), pour être visibles
+                             sur TOUTE réservation, avec ou sans profil de créneaux. -->
+                        <div class="cell warning" ng-if="vm.edtRoomConflictWarning">
+                            [[vm.edtRoomConflictWarning]]
+                        </div>
+                        <div class="cell" ng-if="vm.editedBooking.resource">
+                            <a class="room-schedule-toggle" ng-click="vm.toggleMiniRoomSchedule()" tooltip="rbs.roomSchedule.help">
+                                <i18n>rbs.roomSchedule.menu</i18n>
+                            </a>
+                            <div ng-if="vm.miniRoomSchedule.expanded">
+                                <div class="row" ng-if="!vm.miniRoomSchedule.loading && vm.miniRoomSchedule.slots.length === 0">
+                                    <p class="info"><i18n>rbs.roomSchedule.empty</i18n></p>
+                                </div>
+                                <table class="list-view twelve cell" ng-if="vm.miniRoomSchedule.slots.length > 0">
+                                    <tbody>
+                                        <tr ng-repeat="slot in vm.miniRoomSchedule.slots" ng-class="{'room-schedule-edt': slot.source === 'edt', 'room-schedule-rbs': slot.source === 'rbs'}">
+                                            <td class="two">[[slot.start.format('dddd DD/MM')]]</td>
+                                            <td class="two">[[slot.start.format('HH:mm')]] - [[slot.end.format('HH:mm')]]</td>
+                                            <td class="two">[[slot.label]]</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
 
