@@ -80,6 +80,10 @@
                         <i18n>rbs.calendar.sniplet.max.delay.not.respected</i18n> [[vm.displayDelayDays(vm.editedBooking.resource.maxDelay)]]
                         <i18n>rbs.calendar.sniplet.days.in.advance</i18n>
                     </div>
+                    <!-- Conflit avec l'Emploi du temps (non bloquant, même patron que booking-form.html côté rbs) -->
+                    <div class="cell warning" ng-if="vm.edtRoomConflictWarning">
+                        [[vm.edtRoomConflictWarning]]
+                    </div>
                     <div class="row accordions">
                         <!-- Resource description -->
                         <div class="toggle">

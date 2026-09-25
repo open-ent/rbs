@@ -28,7 +28,12 @@ gulp.task('build', ['webpack'], () => {
     var copyBehaviours = gulp.src('./src/main/resources/public/dist/behaviours.js')
         .pipe(gulp.dest('./src/main/resources/public/js'));
 
-    return merge[refs, copyBehaviours];
+    // Bug corrigé : `merge[refs, copyBehaviours]` (crochets = accès de propriété) au lieu de
+    // `merge(refs, copyBehaviours)` (appel de fonction) — la tâche ne rendait donc jamais un flux
+    // suivi par gulp, qui la déclarait terminée en ~2ms sans attendre la copie réelle. La copie
+    // aboutissait quand même le plus souvent (l'écriture disque est rapide), mais sans garantie —
+    // un `build.sh` qui démonte son conteneur juste après pourrait couper la copie en cours.
+    return merge(refs, copyBehaviours);
 });
 
 function getModName(fileContent){

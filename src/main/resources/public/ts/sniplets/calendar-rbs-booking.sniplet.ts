@@ -1,5 +1,6 @@
 import {BookingService, IBookingService} from "../services";
 import {angular, idiom, model} from "entcore";
+import http from "axios";
 import {Booking, Bookings, IBookingResponse} from "../models/booking.model";
 import {Resource} from "../models/resource.model";
 import {ResourceType, Structure} from "../models/resource-type.model";
@@ -119,6 +120,9 @@ interface IViewModel {
     isOneDayEvent(calendarEvent: CalendarEvent): boolean;
 
     isBookingPossible(excludeBookingFormInfos?: boolean): boolean;
+
+    edtRoomConflictWarning: string;
+    checkEdtRoomConflict(): Promise<void>;
 }
 
 class ViewModel implements IViewModel {
@@ -146,6 +150,8 @@ class ViewModel implements IViewModel {
     numberOfTotalItems: number;
     minMaxDelaysCompliant: boolean;
 
+    edtRoomConflictWarning: string;
+
     private bookingService;
 
     constructor(scope, bookingService: IBookingService, source: string) {
@@ -167,8 +173,22 @@ class ViewModel implements IViewModel {
         this.editedBooking.booking_reason = idiom.translate("rbs.calendar.sniplet.booking.reason");
 
         this.setHandler();
+
+        // Avertissement non bloquant (même patron que booking-form.ts, module rbs) : jusqu'ici ce
+        // composant embarqué dans le formulaire d'événement Calendar ne vérifiait que les conflits
+        // avec d'autres réservations RBS (via availableResourceQuantity), jamais les cours de
+        // l'Emploi du temps — une salle occupée par un cours pouvait donc être réservée depuis
+        // n'importe quel agenda (personnel, groupe, établissement) sans aucun avertissement.
+        this.edtRoomConflictWarning = '';
+        this.scope.$watchGroup([
+            () => this.editedBooking && this.editedBooking.resource && this.editedBooking.resource.name,
+            () => this.editedBooking && this.editedBooking.startMoment && this.editedBooking.startMoment.valueOf(),
+            () => this.editedBooking && this.editedBooking.endMoment && this.editedBooking.endMoment.valueOf()
+        ], () => { this.checkEdtRoomConflict(); });
+
         this.loading = false;
     }
+
 
     /**
      * Get calendarEvent change and change form accordingly
@@ -608,6 +628,36 @@ class ViewModel implements IViewModel {
      */
     getRightList(resource: Resource): Availability[] {
         return AvailabilityUtil.getRightList(resource);
+    }
+
+    /**
+     * Avertissement non bloquant (même patron que booking-form.ts, module rbs) : une salle déjà
+     * occupée par un cours de l'Emploi du temps sur ce créneau n'empêche jamais la réservation
+     * (corrélation par nom exact entre la ressource RBS et les roomLabels EDT — aucune garantie
+     * qu'ils coïncident si les libellés diffèrent, silence total dans ce cas).
+     */
+    async checkEdtRoomConflict(): Promise<void> {
+        this.edtRoomConflictWarning = '';
+        const booking = this.editedBooking;
+        const structureId: string = booking && booking.structure && booking.structure.id;
+        const roomName: string = booking && booking.resource && booking.resource.name;
+        if (!structureId || !roomName || !booking.startMoment || !booking.endMoment) {
+            return;
+        }
+        const start: string = booking.startMoment.format('YYYY-MM-DDTHH:mm:ss');
+        const end: string = booking.endMoment.format('YYYY-MM-DDTHH:mm:ss');
+        try {
+            const {data}: any = await http.get(
+                `/edt/structures/${structureId}/room-conflicts/${start}/${end}`,
+                {params: {room: roomName}}
+            );
+            if (data && data.length > 0) {
+                this.edtRoomConflictWarning = idiom.translate('rbs.edt.room.conflict.warning').replace('{{room}}', roomName);
+            }
+        } catch (e) {
+            this.edtRoomConflictWarning = '';
+        }
+        safeApply(this.scope);
     }
 
     /**
