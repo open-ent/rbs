@@ -1,5 +1,5 @@
 <article id="calendar-booking" class="sniplet rbs calendarBooking"
-         ng-if="(vm.hasRbsAccess() && (vm.hasBookingRight && !vm.calendarEvent._id) || vm.canViewBooking)">
+         ng-if="(vm.hasRbsAccess() && (vm.hasBookingRight && !vm.calendarEvent._id) || vm.canViewBooking || vm.bookingProposals.length > 0)">
     <h2 class="backgroundBlueTitle" ng-if="vm.canEditEvent">
         <i18n>rbs.title</i18n>
     </h2>
@@ -54,6 +54,42 @@
                     </div>
                     <div ng-if="booking.hasBeenDeleted">
                         <i18n>rbs.calendar.sniplet.booking.deleted</i18n>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Point B2 : propositions de réservation en attente/traitées sur cet événement
+                 (agenda partagé n'appartenant pas à l'auteur, cf. BookingProposalController).
+                 Visible par l'auteur ET le propriétaire ; boutons réservés au propriétaire, tant
+                 que PENDING. -->
+            <div class="row block-container sniplet calendarBooking-bookingInfoBox calendarBooking-bookingFormBody
+                twelve cell" ng-repeat="proposal in vm.bookingProposals" ng-if="vm.calendarEvent._id">
+                <div class="row">
+                    <div class="nine cell">
+                        <i18n>rbs.calendar.booking.proposal.from</i18n>
+                        <b>[[proposal.proposedBy.displayName]]</b> —
+                        <i18n>rbs.calendar.booking.proposal.to</i18n>
+                        <b>[[proposal.owner.displayName]]</b> :
+                        [[vm.bookingProposalStatusLabel(proposal.status)]]
+                    </div>
+                </div>
+                <div class="row" ng-if="proposal.status === 'REFUSED' && proposal.refusalReason">
+                    <i18n>rbs.calendar.booking.proposal.refusal.reason</i18n> [[proposal.refusalReason]]
+                </div>
+                <div ng-if="vm.canProcessProposal(proposal)">
+                    <div class="row">
+                        <textarea class="twelve cell" ng-model="vm.refusalReasons[proposal._id]"
+                                  placeholder="[[vm.translate('rbs.calendar.booking.proposal.refusal.reason.placeholder')]]"></textarea>
+                    </div>
+                    <div class="row">
+                        <button class="right-magnet" ng-disabled="vm.processingProposalId === proposal._id"
+                                ng-click="vm.acceptProposal(proposal)">
+                            <i18n>rbs.calendar.booking.proposal.accept</i18n>
+                        </button>
+                        <button ng-disabled="vm.processingProposalId === proposal._id"
+                                ng-click="vm.refuseProposal(proposal)">
+                            <i18n>rbs.calendar.booking.proposal.refuse</i18n>
+                        </button>
                     </div>
                 </div>
             </div>

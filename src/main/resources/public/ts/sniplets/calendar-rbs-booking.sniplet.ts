@@ -123,6 +123,17 @@ interface IViewModel {
 
     edtRoomConflictWarning: string;
     checkEdtRoomConflict(): Promise<void>;
+
+    bookingProposals: Array<any>;
+    refusalReasons: { [proposalId: string]: string };
+    processingProposalId: string;
+    loadBookingProposals(): Promise<void>;
+    isProposalOwner(proposal: any): boolean;
+    canProcessProposal(proposal: any): boolean;
+    acceptProposal(proposal: any): Promise<void>;
+    refuseProposal(proposal: any): Promise<void>;
+    bookingProposalStatusLabel(status: string): string;
+    translate(key: string): string;
 }
 
 class ViewModel implements IViewModel {
@@ -152,6 +163,15 @@ class ViewModel implements IViewModel {
 
     edtRoomConflictWarning: string;
 
+    // Point B2 (chantier "vue consolidée EDT+RBS") : circuit d'approbation d'une réservation RBS
+    // proposée sur un agenda partagé n'appartenant pas à l'auteur (cf. BookingProposalController,
+    // module calendar). L'auteur ET le propriétaire de l'agenda voient la liste des propositions
+    // liées à cet événement ; seul le propriétaire (model.me.userId === proposal.owner.userId)
+    // voit les boutons Accepter/Refuser, uniquement tant que le statut est PENDING.
+    bookingProposals: Array<any>;
+    refusalReasons: { [proposalId: string]: string };
+    processingProposalId: string;
+
     private bookingService;
 
     constructor(scope, bookingService: IBookingService, source: string) {
@@ -166,6 +186,9 @@ class ViewModel implements IViewModel {
         this.canEditEvent = false;
         this.bookings = new Bookings();
         this.dateFormat = FORMAT;
+        this.bookingProposals = [];
+        this.refusalReasons = {};
+        this.processingProposalId = undefined;
 
         this.editedBooking = new Booking();
         this.editedBooking.opened = true;
@@ -376,6 +399,9 @@ class ViewModel implements IViewModel {
                             });
                     })
                 }
+                if (this.calendarEvent._id) {
+                    this.loadBookingProposals();
+                }
                 this.autoSelectStructure();
                 this.editedBooking.quantity = 1;
                 this.loading = false;
@@ -393,9 +419,74 @@ class ViewModel implements IViewModel {
                 this.canViewBooking = false;
                 this.canEditEvent = false;
                 this.bookings.all = [];
+                this.bookingProposals = [];
                 safeApply(this.scope);
 
                 break;
+        }
+    }
+
+    /**
+     * Charge les propositions de réservation (PENDING/ACCEPTED/REFUSED) liées à cet événement
+     * — hors scope RBS (droit rbs.view), l'auteur ET le propriétaire de l'agenda partagé y ont
+     * accès sans droit RBS particulier (cf. BookingProposalController, ActionType.AUTHENTICATED).
+     */
+    async loadBookingProposals(): Promise<void> {
+        try {
+            const {data} = await http.get(`/calendar/booking-proposal/by-event/${this.calendarEvent._id}`);
+            this.bookingProposals = data || [];
+        } catch (e) {
+            this.bookingProposals = [];
+        }
+        safeApply(this.scope);
+    }
+
+    /** Le propriétaire de l'agenda visé par la proposition — jamais un droit RBS. */
+    isProposalOwner(proposal: any): boolean {
+        return !!(proposal && proposal.owner && model.me.userId === proposal.owner.userId);
+    }
+
+    canProcessProposal(proposal: any): boolean {
+        return this.isProposalOwner(proposal) && proposal.status === 'PENDING';
+    }
+
+    async acceptProposal(proposal: any): Promise<void> {
+        this.processingProposalId = proposal._id;
+        try {
+            await http.put(`/calendar/booking-proposal/${proposal._id}/process`, {status: 'ACCEPTED'});
+            await this.loadBookingProposals();
+        } catch (e) {
+            console.error(e);
+        }
+        this.processingProposalId = undefined;
+        safeApply(this.scope);
+    }
+
+    async refuseProposal(proposal: any): Promise<void> {
+        this.processingProposalId = proposal._id;
+        try {
+            await http.put(`/calendar/booking-proposal/${proposal._id}/process`, {
+                status: 'REFUSED',
+                refusalReason: this.refusalReasons[proposal._id] || undefined,
+            });
+            await this.loadBookingProposals();
+        } catch (e) {
+            console.error(e);
+        }
+        this.processingProposalId = undefined;
+        safeApply(this.scope);
+    }
+
+    translate(key: string): string {
+        return idiom.translate(key);
+    }
+
+    bookingProposalStatusLabel(status: string): string {
+        switch (status) {
+            case 'PENDING': return idiom.translate('rbs.calendar.booking.proposal.status.pending');
+            case 'ACCEPTED': return idiom.translate('rbs.calendar.booking.proposal.status.accepted');
+            case 'REFUSED': return idiom.translate('rbs.calendar.booking.proposal.status.refused');
+            default: return status;
         }
     }
 
