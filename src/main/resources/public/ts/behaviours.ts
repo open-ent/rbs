@@ -53,9 +53,15 @@ Behaviours.register('rbs', {
         var isAdmlForResource = model.me.functions.ADMIN_LOCAL && _.find(model.me.functions.ADMIN_LOCAL.scope, function (structure_id) {
             return structure_id === rightsContainer.school_id;
         });
+        // Un super-admin n'est jamais propriétaire ni partagé sur un type qu'il n'a pas lui-même
+        // créé : sans ce contournement, un type existant (ex. Vidéoprojecteur créé par un admin
+        // local) n'obtenait jamais myRights.process et disparaissait de la vue de gestion Angular
+        // (filtrée par keepProcessableResourceTypes) — symétrique au contournement déjà en place
+        // côté backend (UserInfos#isADMC dans TypeOwnerSharedOrLocalAdmin).
+        var isSuperAdmin = !!model.me.functions.SUPER_ADMIN;
 
         for (var behaviour in rbsBehaviours.resources) {
-            if (model.me.userId === resource.owner || model.me.userId === rightsContainer.owner || isAdmlForResource || model.me.hasRight(rightsContainer, rbsBehaviours.resources[behaviour])) {
+            if (model.me.userId === resource.owner || model.me.userId === rightsContainer.owner || isAdmlForResource || isSuperAdmin || model.me.hasRight(rightsContainer, rbsBehaviours.resources[behaviour])) {
                 if (resource.myRights[behaviour] !== undefined) {
                     resource.myRights[behaviour] = resource.myRights[behaviour] && rbsBehaviours.resources[behaviour];
                 } else {
