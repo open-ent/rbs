@@ -1104,6 +1104,29 @@ public class BookingController extends ControllerHelper {
 		});
 	}
 
+	// Pas de @ResourceFilter(TypeAndResourceAppendPolicy.class) contrairement à
+	// listBookingsByResource ci-dessus : symétrique de CourseController::getRoomConflicts côté
+	// module edt (consommé dans l'autre sens par RBS, cf. checkEdtRoomConflict) — un simple
+	// avertissement non bloquant de disponibilité, pas une consultation de contenu RBS protégé,
+	// donc pas soumis au droit de partage individuel sur la ressource (un enseignant qui saisit un
+	// cours EDT à la main n'a en général aucun partage RBS direct sur la salle).
+	@Get("/resource/:id/booking-conflicts/:startAt/:endAt")
+	@ApiDoc("Réservations RBS d'une ressource sur une période — vérification de disponibilité avant saisie manuelle d'un cours EDT, sans exiger de droit RBS individuel sur la ressource.")
+	@SecuredAction(value = "rbs.read", type = ActionType.AUTHENTICATED)
+	public void getResourceBookingConflicts(final HttpServerRequest request) {
+		UserUtils.getUserInfos(eb, request, user -> {
+			if (user == null) {
+				log.debug("User not found in session.");
+				unauthorized(request);
+				return;
+			}
+			String resourceId = request.params().get("id");
+			String startAt = request.params().get("startAt");
+			String endAt = request.params().get("endAt");
+			bookingService.listBookingsByResource(resourceId, startAt, endAt, arrayResponseHandler(request));
+		});
+	}
+
 	@Get("/bookings/unprocessed")
 	@ApiDoc("List all bookings waiting to be processed by current user")
 	@SecuredAction("rbs.booking.list.unprocessed")
