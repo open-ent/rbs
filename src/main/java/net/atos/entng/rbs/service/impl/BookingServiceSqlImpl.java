@@ -107,8 +107,12 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 		FutureHelper.all(bookingsFuture)
 				.onSuccess((res) -> {
 					JsonArray savedBookings = new JsonArray();
+					// Réservation refusée (créneau déjà pris) : résultat vide, simplement absente de la
+					// réponse — l'appelant compare aux ressources demandées pour signaler le conflit.
+					// Ex. salle 201 déjà prise : getValue(0) levait une exception et le bus ne répondait plus.
 					bookingsFuture.stream()
 							.map((Future::result))
+							.filter((savedBooking) -> savedBooking != null && !savedBooking.isEmpty())
 							.forEach((savedBooking) -> savedBookings.add(savedBooking.getValue(0)));
 
 					promise.complete(savedBookings);
@@ -1043,8 +1047,11 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 
 		// Filtre optionnel par période (vue de disponibilité, cf. BookingController) : chevauchement
 		// classique, mêmes bornes que getCreationBooking (start < fin demandée ET end > début demandé).
+		// Bornes reçues en heure de Paris, réservations stockées en UTC : conversion avant comparaison.
+		// Ex. 16:15-17:00 le 16/11 (hiver) → 15:15-16:00 UTC ; sans elle, la salle paraissait libre.
 		if (!StringUtils.isEmpty(startAt) && !StringUtils.isEmpty(endAt)) {
-			query.append(" AND b.start_date < ?::timestamp AND b.end_date > ?::timestamp");
+			query.append(" AND b.start_date < (?::timestamp AT TIME ZONE 'Europe/Paris' AT TIME ZONE 'UTC')")
+					.append(" AND b.end_date > (?::timestamp AT TIME ZONE 'Europe/Paris' AT TIME ZONE 'UTC')");
 			values.add(endAt).add(startAt);
 		}
 
