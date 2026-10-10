@@ -26,6 +26,14 @@
             <name>ODE Repository</name>
             <url>https://maven.opendigitaleducation.com/nexus/content/groups/public</url>
         </repository>
+        <!-- Libs entcore patchées (common 6.16.8-patched…) : publiées sur rct-nexus, pas sur le
+             registre GitHub d'entcore-v2 — sans ce dépôt la CI échoue « Could not find artifact
+             org.entcore:common:jar:6.16.8-patched ». Même déclaration qu'edt. -->
+        <repository>
+            <id>pt-releases</id>
+            <name>rct-nexus maven-releases (entcore-libs patchées)</name>
+            <url>https://rct-nexus.tech.fr/repository/maven-releases/</url>
+        </repository>
     </repositories>
 
     <properties>
