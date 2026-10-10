@@ -57,6 +57,11 @@ jobs:
                 <username>$GITHUB_ACTOR</username>
                 <password>$GITHUB_TOKEN</password>
               </server>
+              <server>
+                <id>pt-releases</id>
+                <username>$NEXUS_USER</username>
+                <password>$NEXUS_PASSWORD</password>
+              </server>
             </servers>
             <profiles>
               <profile>
@@ -69,6 +74,15 @@ jobs:
                     <releases><enabled>true</enabled></releases>
                     <snapshots><enabled>true</enabled></snapshots>
                   </repository>
+                  <!-- common vient ici des libs (6.16.8-patched), publiées sur le seul
+                       rct-nexus : sans ce dépôt, la vérification ne résout rien. -->
+                  <repository>
+                    <id>pt-releases</id>
+                    <name>rct-nexus releases</name>
+                    <url>https://rct-nexus.tech.fr/repository/maven-releases/</url>
+                    <releases><enabled>true</enabled></releases>
+                    <snapshots><enabled>false</enabled></snapshots>
+                  </repository>
                 </repositories>
               </profile>
             </profiles>
@@ -80,6 +94,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
+          NEXUS_USER: ${{ secrets.NEXUS_USER }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
 
       - name: Download frontend assets
         uses: actions/download-artifact@v8
