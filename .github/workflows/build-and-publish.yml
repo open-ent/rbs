@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       entcore_version:
-        description: 'Version entcore (ex: 6.14.9-patched). Laissez vide pour utiliser la version du pom.xml.'
+        description: 'Version entcore (ex: 6.16.14-patched). Laissez vide pour utiliser la version du pom.xml.'
         required: false
         default: ''
 
@@ -104,7 +104,6 @@ jobs:
                 <username>$GITHUB_ACTOR</username>
                 <password>$GITHUB_TOKEN</password>
               </server>
-              <!-- rct-nexus : libs entcore patchées (common 6.16.8-patched), cf. pom.xml -->
               <server>
                 <id>pt-releases</id>
                 <username>$NEXUS_USER</username>
@@ -177,6 +176,11 @@ jobs:
                 <id>github</id>
                 <username>${env.GITHUB_ACTOR}</username>
                 <password>${env.GITHUB_TOKEN}</password>
+              </server>
+              <server>
+                <id>pt-releases</id>
+                <username>${{ secrets.NEXUS_USER }}</username>
+                <password>${{ secrets.NEXUS_PASSWORD }}</password>
               </server>
             </servers>
           </settings>
