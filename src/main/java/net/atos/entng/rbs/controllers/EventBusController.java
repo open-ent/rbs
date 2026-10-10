@@ -70,6 +70,14 @@ public class EventBusController extends ControllerHelper {
                 });
 
                 break;
+            case "busy-resources":
+                // Réservations bloquantes de plusieurs ressources sur un créneau, en un appel :
+                // disponibilité des salles dans le formulaire de cours de l'emploi du temps.
+                // Ex. {resourceIds:[12,15], startAt:"2026-11-16T10:00:00", endAt:"…T11:00:00"}.
+                List<Integer> busyIds = body.getJsonArray("resourceIds", new JsonArray()).getList();
+                bookingService.listBlockingBookings(busyIds, body.getString("startAt"), body.getString("endAt"),
+                        BusResponseHandler.busArrayHandler(message));
+                break;
             case "list-resources":
                 // Lecture non filtrée par droits RBS — appel interne de module à module (EDT,
                 // cahier de texte…) pour peupler un sélecteur de salle/ressource accessible à

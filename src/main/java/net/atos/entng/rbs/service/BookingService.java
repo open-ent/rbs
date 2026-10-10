@@ -145,6 +145,14 @@ public interface BookingService extends CrudService {
 	 * @param startAt/endAt : ISO datetime, optionnels (null = pas de filtre, comportement identique
 	 *                        à listBookingsByResource(resourceId, handler) — tout l'historique).
 	 */
+	/**
+	 * Réservations qui occupent réellement les ressources données sur un créneau (heure de Paris,
+	 * « YYYY-MM-DDTHH:mm:ss ») : non refusées, hors réservation « mère » d'une série périodique.
+	 * Ex. disponibilité des salles proposées en remplacement dans le formulaire de cours.
+	 */
+	public void listBlockingBookings(final List<Integer> resourceIds, final String startAt, final String endAt,
+			final Handler<Either<String, JsonArray>> handler);
+
 	public void listBookingsByResource(final String resourceId, final String startAt, final String endAt,
 			final Handler<Either<String, JsonArray>> handler);
 

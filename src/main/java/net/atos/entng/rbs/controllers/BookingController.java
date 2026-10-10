@@ -329,6 +329,11 @@ public class BookingController extends ControllerHelper {
 	 * RbsHelper/EventBusController) — pas de nouveau mécanisme, juste le symétrique. Dégradation
 	 * silencieuse si l'établissement n'a pas d'agenda de structure : ce n'est pas bloquant pour la
 	 * réservation elle-même.
+	 *
+	 * Titre = motif de la réservation (booking_reason, ex. "Cours de Maths") quand il est
+	 * renseigné, sinon le nom de la ressource ; lieu = toujours le nom de la ressource. Avant ce
+	 * correctif, le titre portait systématiquement le nom de la ressource et le lieu restait
+	 * vide — incohérent (constaté sur l'ENT local, le motif réel de la réservation disparaissait).
 	 */
 	private void notifyStructureCalendarIfValidated(final JsonObject booking, final String resourceName, final String structureId,
 			final UserInfos user) {
@@ -341,10 +346,15 @@ public class BookingController extends ControllerHelper {
 		if (startDate == null || endDate == null) {
 			return;
 		}
+		final String reason = booking.getString("booking_reason");
+		final String title = (reason != null && !reason.trim().isEmpty())
+				? reason
+				: (resourceName != null ? resourceName : "Réservation");
 		JsonObject action = new JsonObject()
 				.put("action", "create-event-from-booking")
 				.put("structureId", structureId)
-				.put("title", resourceName != null ? resourceName : "Réservation")
+				.put("title", title)
+				.put("location", resourceName)
 				.put("startDate", startDate)
 				.put("endDate", endDate)
 				.put("bookingId", booking.getLong("id", 0L))
