@@ -104,6 +104,11 @@ jobs:
                 <username>$GITHUB_ACTOR</username>
                 <password>$GITHUB_TOKEN</password>
               </server>
+              <server>
+                <id>pt-releases</id>
+                <username>$NEXUS_USER</username>
+                <password>$NEXUS_PASSWORD</password>
+              </server>
             </servers>
             <profiles>
               <profile>
@@ -116,6 +121,17 @@ jobs:
                     <releases><enabled>true</enabled></releases>
                     <snapshots><enabled>true</enabled></snapshots>
                   </repository>
+                  <!-- rbs est le seul module dont common vient des libs (6.16.8-patched).
+                       La CI des libs ne publie que sur rct-nexus : sans ce dépôt, la
+                       résolution n'avait d'autre recours que le cache Maven, et la purge
+                       des versions -patched republiées la faisait échouer. -->
+                  <repository>
+                    <id>pt-releases</id>
+                    <name>rct-nexus releases</name>
+                    <url>https://rct-nexus.tech.fr/repository/maven-releases/</url>
+                    <releases><enabled>true</enabled></releases>
+                    <snapshots><enabled>false</enabled></snapshots>
+                  </repository>
                 </repositories>
               </profile>
             </profiles>
@@ -127,6 +143,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
+          NEXUS_USER: ${{ secrets.NEXUS_USER }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
 
       - name: Download frontend assets
         uses: actions/download-artifact@v8
