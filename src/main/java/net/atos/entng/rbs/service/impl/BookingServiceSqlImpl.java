@@ -271,9 +271,12 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 		// pouvaient coexister sans erreur ni statut particulier. REFUSED exclu : une réservation
 		// refusée ne bloque plus le créneau. 0 ligne insérée ici = conflit ; le contrôleur HTTP
 		// (getBookingCreationResponse) traite déjà ce cas comme un 409 (résultat Right vide).
+		// Réservation « mère » d'une série périodique exclue : elle couvre toute la période de la
+		// série (ex. lundis de septembre à juin) ; seules ses occurrences occupent la ressource.
 		query.append(" WHERE NOT EXISTS (")
 				.append("SELECT 1 FROM rbs.booking b")
 				.append(" WHERE b.resource_id = ? AND b.status <> ?")
+				.append(" AND NOT (b.is_periodic = true AND b.parent_booking_id IS NULL)")
 				.append(" AND b.start_date < ? AND b.end_date > ?")
 				.append(")");
 		values.add(rId).add(REFUSED.status())
@@ -283,7 +286,10 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 		// Returning result — resource_id inclus : permet à l'appelant (pont EDT/diary) de savoir
 		// PRÉCISÉMENT quelles ressources demandées ont vraiment été réservées, en comparant à la
 		// liste demandée (une ressource absente de la réponse = bloquée par le WHERE NOT EXISTS).
-		query.append(" RETURNING id, resource_id, quantity, status, to_char(start_date, '").append(DATE_FORMAT)
+		// booking_reason inclus : repris par le pont RBS->calendar (BookingController
+		// ::notifyStructureCalendarIfValidated) pour titrer l'événement créé dans l'agenda
+		// d'établissement avec le motif réel plutôt que seulement le nom de la ressource.
+		query.append(" RETURNING id, resource_id, quantity, status, booking_reason, to_char(start_date, '").append(DATE_FORMAT)
 				.append("') AS start_date, to_char(end_date, '").append(DATE_FORMAT).append("') AS end_date");
 
 		return new JsonObject().put("query", query).put("values", values);
@@ -769,7 +775,8 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 				.append("WHERE id = ?").append(" AND resource_id = ? ");
 		processValues.add(bId).add(rId);
 
-		StringBuilder returningClause = new StringBuilder(" RETURNING id, status, owner, ")
+		// booking_reason inclus pour la même raison que createBooking (cf. commentaire là-bas).
+		StringBuilder returningClause = new StringBuilder(" RETURNING id, status, owner, booking_reason, ")
 				.append(" to_char(start_date AT TIME ZONE 'UTC' AT TIME ZONE 'EUROPE/PARIS', '").append(DATE_FORMAT).append("') AS start_date,")
 				.append(" to_char(end_date AT TIME ZONE 'UTC' AT TIME ZONE 'EUROPE/PARIS', '").append(DATE_FORMAT).append("') AS end_date");
 
@@ -1058,6 +1065,37 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 		query.append(" ORDER BY b.start_date, b.end_date");
 
 		Sql.getInstance().prepared(query.toString(), values, validResultHandler(handler));
+	}
+
+	/**
+	 * Réservation qui occupe vraiment la ressource, même règle que le conflit de création
+	 * (getCreationBooking) : non refusée, et pas la réservation « mère » d'une série périodique.
+	 */
+	private static final String BLOCKING_BOOKING = " AND b.status <> ? AND NOT (b.is_periodic = true AND b.parent_booking_id IS NULL)";
+
+	@Override
+	public void listBlockingBookings(final List<Integer> resourceIds, final String startAt, final String endAt,
+			final Handler<Either<String, JsonArray>> handler) {
+		if (resourceIds == null || resourceIds.isEmpty()) {
+			handler.handle(new Either.Right<>(new JsonArray()));
+			return;
+		}
+		// Bornes en heure de Paris (comme booking-conflicts), réservations stockées en UTC ; début et
+		// fin renvoyés en heure de Paris pour que l'appelant reconnaisse ses propres réservations.
+		// Ex. ressources [12, 15], lundi 16/11 10:00-11:00 →
+		// [{id: 4093, resource_id: 12, start_local: "2026-11-16T10:00:00", end_local: "2026-11-16T11:00:00"}].
+		String query = "SELECT b.id, b.resource_id"
+				+ ", to_char(b.start_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris', 'YYYY-MM-DD\"T\"HH24:MI:SS') AS start_local"
+				+ ", to_char(b.end_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris', 'YYYY-MM-DD\"T\"HH24:MI:SS') AS end_local"
+				+ " FROM rbs.booking AS b"
+				+ " WHERE b.resource_id IN " + Sql.listPrepared(resourceIds.toArray())
+				+ " AND b.start_date < (?::timestamp AT TIME ZONE 'Europe/Paris' AT TIME ZONE 'UTC')"
+				+ " AND b.end_date > (?::timestamp AT TIME ZONE 'Europe/Paris' AT TIME ZONE 'UTC')"
+				+ BLOCKING_BOOKING;
+		JsonArray values = new JsonArray();
+		resourceIds.forEach(values::add);
+		values.add(endAt).add(startAt).add(REFUSED.status());
+		Sql.getInstance().prepared(query, values, validResultHandler(handler));
 	}
 
 	@Override
