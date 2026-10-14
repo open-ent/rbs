@@ -1,14 +1,15 @@
 /** Fonctions pures du module RBS (testables). */
 
 import { BOOKING_STATUS } from './api';
+import { dateLocale, dayShort } from './locale';
 
-/** Formate une date backend en « jj/mm/aaaa hh:mm » (heure locale FR). */
+/** Formate une date backend en date + heure, dans la locale de la session. */
 export function formatDateTime(iso?: string): string {
   if (!iso) return '';
   const d = parseBackendDate(iso);
   return Number.isNaN(d.getTime())
     ? ''
-    : d.toLocaleString('fr-FR', {
+    : d.toLocaleString(dateLocale(), {
         day: '2-digit',
         month: '2-digit',
         year: 'numeric',
@@ -67,13 +68,13 @@ export function timeInputToSeconds(value: string): number {
   return Number(m[1]) * 3600 + Number(m[2]) * 60;
 }
 
-/** Formate une date backend en « jj/mm/aaaa » (jour local, sans l'heure). */
+/** Formate une date backend en jour local (sans l'heure), dans la locale de la session. */
 export function formatDateOnly(iso?: string): string {
   if (!iso) return '';
   const d = parseBackendDate(iso);
   return Number.isNaN(d.getTime())
     ? ''
-    : d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    : d.toLocaleDateString(dateLocale(), { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 /** Réduit une heure « HH:mm:ss » à « HH:mm ». */
@@ -125,11 +126,11 @@ export function isSameDay(iso: string, d: Date): boolean {
   return b.getFullYear() === d.getFullYear() && b.getMonth() === d.getMonth() && b.getDate() === d.getDate();
 }
 
-/** Heure « HH:mm » en **heure locale** (FR) d'une date backend. */
+/** Heure « HH:mm » en **heure locale** d'une date backend, dans la locale de la session. */
 export function isoTime(iso?: string): string {
   if (!iso) return '';
   const d = parseBackendDate(iso);
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString(dateLocale(), { hour: '2-digit', minute: '2-digit' });
 }
 
 /** Heure locale (0-23) d'une date backend ; -1 si illisible. */
@@ -148,10 +149,12 @@ export function hourSlots(from = 7, to = 20): Array<{ from: number; to: number; 
   return slots;
 }
 
-/** Libellés FR des jours cochés d'un bitstring (index 0 = dimanche). */
+/** Libellés des jours cochés d'un bitstring (index 0 = dimanche), dans la locale de la session. */
 export function bitstringToDayLabels(bits?: string): string {
   if (!bits) return '';
-  const labels = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+  // `dayShort()` part du lundi ; le bitstring part du dimanche, d'où la rotation.
+  const monday = dayShort();
+  const labels = [monday[6], ...monday.slice(0, 6)];
   return bits
     .split('')
     .map((c, i) => (c === '1' ? labels[i] : null))

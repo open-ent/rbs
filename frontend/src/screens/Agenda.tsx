@@ -4,10 +4,10 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
 import { api, Booking } from '../api';
+import { dateLocale, dayLabels } from '../locale';
 import { hourSlots, isoTime, isSameDay, localHour, startOfWeek, statusBadgeClass, weekDays, yyyymmdd } from '../utils';
 import { ExportDialog } from './ExportDialog';
 
-const DAY_LABELS = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi'];
 const SLOTS = hourSlots(7, 20);
 
 type View = 'day' | 'week' | 'month';
@@ -23,6 +23,10 @@ export function Agenda() {
   const [cursor, setCursor] = useState(() => new Date());
   const [checked, setChecked] = useState<Set<number> | null>(null); // null = tout coché (défaut)
   const [exporting, setExporting] = useState(false);
+
+  // Lus au rendu et non à l'import : la locale n'est posée qu'une fois la session chargée.
+  const weekdayLabels = dayLabels().slice(0, 5);
+  const locale = dateLocale();
 
   const monday = useMemo(() => startOfWeek(cursor), [cursor]);
   const days = useMemo(() => weekDays(monday).slice(0, 5), [monday]);
@@ -72,10 +76,10 @@ export function Agenda() {
   const sunday = weekDays(monday)[6];
   const periodLabel =
     view === 'day'
-      ? cursor.toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })
+      ? cursor.toLocaleDateString(locale, { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })
       : view === 'month'
-        ? cursor.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
-        : `${monday.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} – ${sunday.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
+        ? cursor.toLocaleDateString(locale, { month: 'long', year: 'numeric' })
+        : `${monday.toLocaleDateString(locale, { day: '2-digit', month: '2-digit' })} – ${sunday.toLocaleDateString(locale, { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
   const shiftLabels: Record<View, [string, string]> = {
     day: [t('rbs.agenda.prevday', { defaultValue: 'Jour précédent' }), t('rbs.agenda.nextday', { defaultValue: 'Jour suivant' })],
     week: [t('rbs.agenda.prev', { defaultValue: 'Semaine précédente' }), t('rbs.agenda.next', { defaultValue: 'Semaine suivante' })],
@@ -104,7 +108,7 @@ export function Agenda() {
             <th style={{ width: 110 }} />
             {cols.map((d, i) => (
               <th key={i} className="text-center" style={{ background: '#e8f5e9' }}>
-                {labels[i]}<br /><span className="text-muted" style={{ fontWeight: 400 }}>{d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}</span>
+                {labels[i]}<br /><span className="text-muted" style={{ fontWeight: 400 }}>{d.toLocaleDateString(locale, { day: '2-digit', month: '2-digit' })}</span>
               </th>
             ))}
           </tr>
@@ -141,7 +145,7 @@ export function Agenda() {
       <div style={{ overflowX: 'auto' }}>
         <table className="table table-bordered mb-0" style={{ minWidth: 760, tableLayout: 'fixed' }}>
           <thead>
-            <tr>{DAY_LABELS.map((l) => <th key={l} className="text-center" style={{ background: '#e8f5e9', textTransform: 'capitalize' }}>{l}</th>)}</tr>
+            <tr>{weekdayLabels.map((l) => <th key={l} className="text-center" style={{ background: '#e8f5e9', textTransform: 'capitalize' }}>{l}</th>)}</tr>
           </thead>
           <tbody>
             {weeks.map((week, wi) => (
@@ -225,8 +229,8 @@ export function Agenda() {
           {bookingsQuery.isLoading && <p>{t('rbs.loading', { defaultValue: 'Chargement…' })}</p>}
           {bookingsQuery.isError && <div className="alert alert-warning" role="alert">{t('rbs.error', { defaultValue: 'Une erreur est survenue.' })}</div>}
 
-          {view === 'day' && grid([cursor], [cursor.toLocaleDateString('fr-FR', { weekday: 'long' })])}
-          {view === 'week' && grid(days, DAY_LABELS)}
+          {view === 'day' && grid([cursor], [cursor.toLocaleDateString(locale, { weekday: 'long' })])}
+          {view === 'week' && grid(days, weekdayLabels)}
           {view === 'month' && monthView()}
         </div>
       </div>

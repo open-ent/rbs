@@ -4,21 +4,19 @@ import { useTranslation } from 'react-i18next';
 import { Link, useParams } from 'react-router-dom';
 
 import { api, Slot } from '../api';
+import { dayShort } from '../locale';
 import { formatDateTime, localInputToUnix, statusBadgeClass, statusLabel } from '../utils';
 import { AvailabilityDialog } from './AvailabilityDialog';
 
 const IANA = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris';
 
-/** Jours de la semaine, dans l'ordre d'affichage FR (lundi→dimanche), avec l'index backend (0=dimanche). */
-const DAYS = [
-  { idx: 1, label: 'Lun' },
-  { idx: 2, label: 'Mar' },
-  { idx: 3, label: 'Mer' },
-  { idx: 4, label: 'Jeu' },
-  { idx: 5, label: 'Ven' },
-  { idx: 6, label: 'Sam' },
-  { idx: 0, label: 'Dim' },
-];
+/**
+ * Jours de la semaine dans l'ordre d'affichage (lundi→dimanche), avec l'index backend
+ * (0 = dimanche). Appelée au rendu et non figée à l'import : les libellés suivent la
+ * langue de la session, posée une fois celle-ci chargée.
+ */
+const weekDayOptions = () =>
+  dayShort().map((label, i) => ({ idx: (i + 1) % 7, label }));
 
 /** Détail d'une ressource : infos, liste des réservations, création (simple ou périodique). */
 export function Resource() {
@@ -253,7 +251,7 @@ export function Resource() {
                 <div className="mb-8">
                   <span className="form-label d-block">{t('rbs.booking.days', { defaultValue: 'Jours' })}</span>
                   <div className="d-flex gap-8 flex-wrap">
-                    {DAYS.map((d) => (
+                    {weekDayOptions().map((d) => (
                       <label key={d.idx} className="d-flex align-items-center gap-4">
                         <input type="checkbox" checked={days[d.idx]} aria-label={d.label} onChange={() => toggleDay(d.idx)} />
                         {d.label}
