@@ -1,11 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
 import { api, Booking } from '../api';
 import { dateLocale, dayLabels } from '../locale';
 import { hourSlots, isoTime, isSameDay, localHour, startOfWeek, statusBadgeClass, weekDays, yyyymmdd } from '../utils';
+import { ResourceTree } from '../components/ResourceTree';
+import { useResourceTree } from '../hooks/useResourceTree';
 import { ExportDialog } from './ExportDialog';
 
 const SLOTS = hourSlots(7, 20);
@@ -21,7 +23,6 @@ export function Agenda() {
   const { t } = useTranslation(['rbs', 'common']);
   const [view, setView] = useState<View>('week');
   const [cursor, setCursor] = useState(() => new Date());
-  const [checked, setChecked] = useState<Set<number> | null>(null); // null = tout coché (défaut)
   const [exporting, setExporting] = useState(false);
 
   // Lus au rendu et non à l'import : la locale n'est posée qu'une fois la session chargée.
@@ -42,28 +43,12 @@ export function Agenda() {
     return { start: yyyymmdd(monday), end: yyyymmdd(weekDays(monday)[6]) };
   }, [view, cursor, monday]);
 
-  const typesQuery = useQuery({ queryKey: ['rbs', 'types'], queryFn: api.getTypes });
-  const resourcesQuery = useQuery({ queryKey: ['rbs', 'resources'], queryFn: api.getResources });
+  const tree = useResourceTree();
   const bookingsQuery = useQuery({ queryKey: ['rbs', 'agenda', start, end], queryFn: () => api.getBookingsInRange(start, end) });
+  const resources = tree.resources;
+  const selected = useMemo(() => new Set(tree.selectedIds), [tree.selectedIds]);
 
-  const types = typesQuery.data ?? [];
-  const resources = resourcesQuery.data ?? [];
-
-  // Toutes les ressources cochées par défaut dès leur chargement.
-  useEffect(() => {
-    if (checked == null && resources.length > 0) setChecked(new Set(resources.map((r) => r.id)));
-  }, [resources, checked]);
-
-  const isChecked = (id: number) => checked == null || checked.has(id);
-  const toggle = (id: number) =>
-    setChecked((prev) => {
-      const next = new Set(prev ?? resources.map((r) => r.id));
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-
-  const bookings = (bookingsQuery.data ?? []).filter((b) => isChecked(b.resource_id));
+  const bookings = (bookingsQuery.data ?? []).filter((b) => selected.has(b.resource_id));
 
   const shift = (dir: number) => {
     const d = new Date(cursor);
@@ -184,29 +169,23 @@ export function Agenda() {
       </div>
 
       <div className="d-flex gap-16" style={{ alignItems: 'flex-start' }}>
-        {/* Panneau latéral : ressources groupées par type, sélection multiple (parité Angular) */}
-        <aside style={{ minWidth: 210 }}>
+        {/* Panneau latéral : arbre établissement › type › ressource, cases à cocher, état mémorisé (comme l'AngularJS) */}
+        <aside style={{ minWidth: 230 }} aria-label={t('rbs.agenda.resources', { defaultValue: 'Ressources' })}>
           <strong>{t('rbs.agenda.resources', { defaultValue: 'Ressources' })}</strong>
-          {types.map((ty) => {
-            const ofType = resources.filter((r) => r.type_id === ty.id);
-            if (ofType.length === 0) return null;
-            return (
-              <div key={ty.id} className="mt-8">
-                <div className="text-muted" style={{ fontSize: 13 }}>{ty.name}</div>
-                <ul className="list-unstyled mb-0">
-                  {ofType.map((r) => (
-                    <li key={r.id} className="py-2">
-                      <label className="d-flex align-items-center gap-8 m-0" style={{ cursor: 'pointer', fontSize: 14 }}>
-                        <input type="checkbox" checked={isChecked(r.id)} onChange={() => toggle(r.id)} aria-label={r.name} />
-                        {r.name}
-                      </label>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            );
-          })}
-          {resources.length === 0 && <p className="text-muted mt-8" style={{ fontSize: 13 }}>{t('rbs.agenda.noresource', { defaultValue: 'Aucune ressource' })}</p>}
+          <div className="mt-8">
+            {tree.ready ? (
+              <ResourceTree
+                tree={tree.tree}
+                onStructure={tree.toggleStructure}
+                onType={tree.toggleType}
+                onResource={tree.toggleResource}
+                onExpandStructure={tree.toggleExpandStructure}
+                onExpandType={tree.toggleExpandType}
+              />
+            ) : (
+              <p className="text-muted" style={{ fontSize: 13 }}>{t('rbs.loading', { defaultValue: 'Chargement…' })}</p>
+            )}
+          </div>
         </aside>
 
         <div className="flex-grow-1">

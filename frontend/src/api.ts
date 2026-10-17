@@ -1,20 +1,26 @@
 // Client REST du module RBS (réservation de ressources) — cookies de session ENT, même origine.
 // Mêmes endpoints que la version AngularJS (backend Java inchangé).
 
+import type { ShareEntry } from './rights';
+
 /** Type de ressource (ex. « Salles »). */
 export interface ResourceType {
   id: number;
+  owner?: string;
+  category?: string | null;
+  extendcolor?: boolean;
   name: string;
   validation: boolean;
   school_id: string;
   color?: string | null;
   slotprofile?: string | null;
-  shared?: unknown[];
+  shared?: ShareEntry[];
 }
 
 /** Ressource réservable (ex. « Salle 101 »). */
 export interface Resource {
   id: number;
+  owner?: string;
   name: string;
   description?: string | null;
   icon?: string | null;
@@ -26,7 +32,7 @@ export interface Resource {
   quantity: number;
   min_delay?: number | null;
   max_delay?: number | null;
-  shared?: unknown[];
+  shared?: ShareEntry[];
 }
 
 /** Statut d'une réservation (convention backend rbs). */
@@ -169,6 +175,11 @@ async function json<T>(res: Response): Promise<T> {
 
 const base = { credentials: 'include' as const };
 const jsonHeaders = { 'Content-Type': 'application/json' };
+/** Jeton anti-CSRF du cookie de session, pour les écritures (absent : en-tête vide). */
+const xsrfHeader = (): Record<string, string> => {
+  const m = /(?:^|;\s*)XSRF-TOKEN=([^;]+)/.exec(document.cookie);
+  return m ? { 'X-XSRF-TOKEN': decodeURIComponent(m[1]) } : {};
+};
 
 // ── Lecture ────────────────────────────────────────────────────────────────
 export const getTypes = async (): Promise<ResourceType[]> =>
@@ -180,12 +191,38 @@ export const getResources = async (): Promise<Resource[]> =>
 export const getResource = async (id: number): Promise<Resource> =>
   json<Resource>(await fetch(`/rbs/resource/${id}`, base));
 
+/** Une réservation par son identifiant — GET /rbs/booking/:id. */
+export const getBooking = async (id: number): Promise<Booking | null> => {
+  const b = await json<Booking | null>(await fetch(`/rbs/booking/${id}`, base));
+  // Une réservation inexistante ou interdite renvoie 200 avec un objet vide : on la traite comme absente.
+  return b && typeof b === 'object' && 'id' in b ? b : null;
+};
+
 export const getResourceBookings = async (id: number): Promise<Booking[]> =>
   json<Booking[]>(await fetch(`/rbs/resource/${id}/bookings`, base));
 
 /** Réservations sur une période (dates « yyyy-MM-dd »), toutes ressources accessibles confondues. */
 export const getBookingsInRange = async (startdate: string, enddate: string): Promise<Booking[]> =>
   json<Booking[]>(await fetch(`/rbs/bookings/all/${startdate}/${enddate}`, base));
+
+// ── Préférence `rbs` du compte (état de l'arbre des ressources), partagée avec l'IHM AngularJS ─────────
+/** Lit la préférence entière : elle porte d'autres clés que l'arbre, qu'une écriture ne doit pas effacer. */
+export const getRbsPreference = async (): Promise<Record<string, unknown>> => {
+  const res = await fetch('/userbook/preference/rbs', base);
+  if (!res.ok) return {};
+  // L'enveloppe est `{ preference: "<json>" }` — une chaîne, pas un objet.
+  const body = (await res.json().catch(() => null)) as { preference?: string | null } | null;
+  if (!body?.preference) return {};
+  try {
+    return (JSON.parse(body.preference) as Record<string, unknown>) ?? {};
+  } catch {
+    return {};
+  }
+};
+
+export const saveRbsPreference = async (preference: Record<string, unknown>): Promise<void> => {
+  await fetch('/userbook/preference/rbs', { ...base, method: 'PUT', headers: { ...jsonHeaders, ...xsrfHeader() }, body: JSON.stringify(preference) });
+};
 
 // ── Écriture ────────────────────────────────────────────────────────────────
 export const createBooking = async (resourceId: number, body: CreateBookingBody): Promise<Booking> =>
@@ -339,6 +376,9 @@ export const shareTypeBatch = async (typeId: number, batch: ShareBatch): Promise
 export const api = {
   getTypes,
   getResources,
+  getBooking,
+  getRbsPreference,
+  saveRbsPreference,
   getResource,
   getResourceBookings,
   getBookingsInRange,

@@ -1,24 +1,36 @@
-import {
-  AppHeader,
-  Breadcrumb,
-  Layout,
-  LoadingScreen,
-  useEdificeClient,
-} from '@open-ent/react';
-import { Outlet } from 'react-router-dom';
+import { AppHeader, Breadcrumb, Layout, LoadingScreen, useEdificeClient } from '@open-ent/react';
+import { useTranslation } from 'react-i18next';
+import { Navigate, NavLink, Outlet, useLocation } from 'react-router-dom';
 
+import { useRbsRights } from '../hooks/useRbsRights';
 import { setLanguage } from '../locale';
 
-/** Gabarit commun : bandeau ENT (Layout + AppHeader + fil d'Ariane) + contenu. */
+/**
+ * Gabarit commun : bandeau ENT + onglets selon les droits, comme l'IHM AngularJS (top-menu.html) : « Calendrier »
+ * pour tous, « Modération » pour qui peut valider, « Gestion » pour qui peut gérer des types ou des ressources.
+ * Ex. un simple demandeur ne voit que le calendrier.
+ */
 export function Root() {
+  const { t } = useTranslation(['rbs', 'common']);
   const { currentApp, currentLanguage, init } = useEdificeClient();
+  const rights = useRbsRights();
+  const { pathname } = useLocation();
 
-  // La locale de formatage des dates suit la langue de la session (cf. locale.ts). Elle est
-  // posée pendant le rendu, et non dans un effet : les écrans sont montés sous ce composant
-  // et formateraient leurs premières dates en français avant que l'effet ne s'exécute.
+  // La locale de formatage des dates suit la langue de la session (cf. locale.ts). Elle est posée pendant le
+  // rendu, et non dans un effet : les écrans sont montés sous ce composant et formateraient leurs premières
+  // dates en français avant que l'effet ne s'exécute.
   setLanguage(currentLanguage);
 
-  if (!init) return <LoadingScreen />;
+  if (!init || !rights.ready) return <LoadingScreen />;
+
+  // Une adresse directe vers un onglet non autorisé renvoie au calendrier.
+  if ((pathname.startsWith('/moderation') && !rights.moderate) || (pathname.startsWith('/resources') && !rights.manage)) return <Navigate to="/" replace />;
+
+  const tabs = [
+    { to: '/', end: true, label: t('rbs.tab.calendar', { defaultValue: 'Calendrier' }), show: true },
+    { to: '/moderation', end: false, label: t('rbs.moderation.title', { defaultValue: 'Modération' }), show: rights.moderate },
+    { to: '/resources', end: false, label: t('rbs.tab.manage', { defaultValue: 'Gestion' }), show: rights.manage },
+  ].filter((x) => x.show);
 
   return (
     <div className="d-flex flex-column vh-100">
@@ -28,6 +40,13 @@ export function Root() {
         </div>
         <div className="flex-grow-1 overflow-auto">
           <div className="container py-16">
+            <nav className="btn-group mb-16" aria-label={t('rbs.nav', { defaultValue: 'Navigation réservation de ressources' })}>
+              {tabs.map((tab) => (
+                <NavLink key={tab.to} to={tab.to} end={tab.end} className={({ isActive }) => `btn btn-${isActive ? 'primary' : 'secondary'}`}>
+                  {tab.label}
+                </NavLink>
+              ))}
+            </nav>
             <Outlet />
           </div>
         </div>
