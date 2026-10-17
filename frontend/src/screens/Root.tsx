@@ -29,6 +29,7 @@ export function Root() {
   const tabs = [
     { to: '/', end: true, label: t('rbs.tab.calendar', { defaultValue: 'Calendrier' }), show: true },
     { to: '/moderation', end: false, label: t('rbs.moderation.title', { defaultValue: 'Modération' }), show: rights.moderate },
+    { to: '/schedule', end: false, label: t('rbs.roomSchedule.menu', { defaultValue: 'Disponibilité' }), show: true },
     { to: '/resources', end: false, label: t('rbs.tab.manage', { defaultValue: 'Gestion' }), show: rights.manage },
   ].filter((x) => x.show);
 

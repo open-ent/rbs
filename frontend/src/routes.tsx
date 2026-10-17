@@ -5,6 +5,7 @@ import { BookingDetail } from './screens/BookingDetail';
 import { BookingForm } from './screens/BookingForm';
 import { Manage } from './screens/Manage';
 import { Root } from './screens/Root';
+import { RoomSchedule } from './screens/RoomSchedule';
 
 export const routes: RouteObject[] = [
   {
@@ -15,6 +16,7 @@ export const routes: RouteObject[] = [
       { path: 'resources', element: <Manage /> },
       { path: 'agenda', element: <Agenda /> },
       { path: 'moderation', element: <Agenda moderation /> },
+      { path: 'schedule', element: <RoomSchedule /> },
       { path: 'booking/new', element: <BookingForm /> },
       { path: 'booking/:bookingId/edit', element: <BookingForm /> },
       { path: 'booking/:bookingId', element: <BookingDetail /> },

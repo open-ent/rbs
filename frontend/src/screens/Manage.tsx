@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { api, ApiError, Booking, Resource, ResourceType } from '../api';
 import { canAct } from '../bookingList';
 import { DefaultTypesForm } from '../components/DefaultTypesForm';
+import { EdtImportForm } from '../components/EdtImportForm';
 import { ResourceForm } from '../components/ResourceForm';
 import { TypeForm } from '../components/TypeForm';
 import { useRbsContext } from '../hooks/useRbsContext';
@@ -12,7 +13,7 @@ import { delayLabel, nextTypeColor } from '../manage';
 import { rightsOn } from '../rights';
 import { Modal } from './Modal';
 
-type Pane = { kind: 'list' } | { kind: 'type'; type?: ResourceType } | { kind: 'defaults' } | { kind: 'resource'; resource?: Resource };
+type Pane = { kind: 'list' } | { kind: 'type'; type?: ResourceType } | { kind: 'defaults' } | { kind: 'edt-import' } | { kind: 'resource'; resource?: Resource };
 type Confirm = { kind: 'delete-types'; types: ResourceType[] } | { kind: 'delete-resources'; resources: Resource[] } | null;
 
 /** Plain-text d'une description saisie en HTML : jamais de balise interprétée. */
@@ -326,10 +327,16 @@ export function Manage() {
                 {t('rbs.manage.type.create.defaults', { defaultValue: 'Créer les types de salles standards (Gymnase, Labo, CDI…)' })}
               </button>
             )}
+            {ctx.can.edtImport && structureId && structureId !== 'DETACHED' && (
+              <button type="button" className="btn btn-link p-0 text-start" onClick={() => setPane({ kind: 'edt-import' })}>
+                {t('rbs.edtImport.open', { defaultValue: "Générer les réservations depuis l'Emploi du temps" })}
+              </button>
+            )}
           </div>
         </aside>
 
         <div className="flex-grow-1" style={{ minWidth: 0 }}>
+          {pane.kind === 'edt-import' && structureId && structureId !== 'DETACHED' && <EdtImportForm structureId={structureId} onClose={closePane} />}
           {pane.kind === 'list' && (
             <>
               {(selectedResources.length > 0 || selectedTypes.length > 0) && (

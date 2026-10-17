@@ -422,6 +422,39 @@ export const deleteResource = async (id: number): Promise<void> => {
 };
 
 
+// ── Notifications (abonnement par ressource ou par type) ──────────────────────────────────────────────────────
+/** Identifiants des ressources dont l'usager reçoit les notifications de réservation. */
+// `no-store` : sans lui le navigateur peut resservir une liste d'abonnements périmée après un changement.
+export const getNotifiedResourceIds = async (): Promise<number[]> => ((await json<Array<{ resource_id: number }>>(await fetch('/rbs/resource/notifications', { ...base, cache: 'no-store' }))) ?? []).map((n) => Number(n.resource_id));
+const notifyCall = async (url: string, method: 'POST' | 'DELETE'): Promise<void> => {
+  const res = await fetch(url, { ...base, method, headers: { ...jsonHeaders, ...xsrfHeader() }, ...(method === 'POST' ? { body: '{}' } : {}) });
+  if (!res.ok && res.status !== 204) throw new ApiError(res.status, errorKey(res.status, await res.text().catch(() => '')));
+};
+export const subscribeResource = (id: number): Promise<void> => notifyCall(`/rbs/resource/notification/add/${id}`, 'POST');
+export const unsubscribeResource = (id: number): Promise<void> => notifyCall(`/rbs/resource/notification/remove/${id}`, 'DELETE');
+export const subscribeType = (id: number): Promise<void> => notifyCall(`/rbs/type/notification/add/${id}`, 'POST');
+export const unsubscribeType = (id: number): Promise<void> => notifyCall(`/rbs/type/notification/remove/${id}`, 'DELETE');
+
+// ── Génération des réservations depuis l'emploi du temps ──────────────────────────────────────────────────────
+export interface EdtImportBody {
+  /** Début et fin de la période analysée, « yyyy-MM-dd ». */
+  startAt: string;
+  endAt: string;
+  /** Fin des réservations répétées, en secondes Unix. */
+  periodicEndDate: number;
+  /** Vrai : aperçu, rien n'est créé. */
+  dryRun: boolean;
+}
+export interface EdtImportReport {
+  created: Array<{ bookingReason: string }>;
+  skippedExisting: Array<{ bookingReason: string }>;
+  conflicts: Array<{ bookingReason: string; existingBookings: Array<{ range: string }> }>;
+  unmatchedRooms: Array<{ roomLabel: string; occurrences: number; courseLabels: string[] }>;
+  obsolete: Array<{ bookingReason: string }>;
+}
+export const importFromEdt = async (structureId: string, body: EdtImportBody): Promise<EdtImportReport> =>
+  jsonStrict<EdtImportReport>(await fetch(`/rbs/structures/${structureId}/import-from-edt`, { ...base, method: 'POST', headers: { ...jsonHeaders, ...xsrfHeader() }, body: JSON.stringify(body) }));
+
 // ── Équipements, affectations, profils de créneaux ─────────────────────────────────────────────────────────────
 export const getEquipments = async (schoolId: string): Promise<Equipment[]> => (await json<Equipment[]>(await fetch(`/rbs/equipments/${schoolId}`, base))) ?? [];
 
@@ -533,6 +566,12 @@ export const api = {
   getSlotProfileSlots,
   getResourceBookingsBetween,
   getRoomConflicts,
+  getNotifiedResourceIds,
+  subscribeResource,
+  unsubscribeResource,
+  subscribeType,
+  unsubscribeType,
+  importFromEdt,
   getEquipments,
   createEquipment,
   setResourceEquipment,

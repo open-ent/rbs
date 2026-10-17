@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildTree, DETACHED_ID, selectedResourceIds, toggleExpandStructure, toggleResource, toggleStructure, toggleType, toState } from './tree';
+import { buildTree, notifyState, DETACHED_ID, selectedResourceIds, toggleExpandStructure, toggleResource, toggleStructure, toggleType, toState } from './tree';
 
 const structures = [{ id: 's1', name: 'Collège A' }, { id: 's2', name: 'Lycée B' }];
 const types = [
@@ -55,4 +55,13 @@ describe('arbre établissement › type › ressource', () => {
     const t = toggleExpandStructure(toggleResource(build(), 13), 's2');
     expect(toState(t).find((s) => s.id === 's2')).toEqual({ id: 's2', expanded: true, selected: true, types: [{ id: 3, expanded: false, resources: [{ id: 13, selected: true }] }] });
   });
+});
+
+describe('notifyState', () => {
+  it('toutes, aucune ou une partie des ressources', () => {
+    expect(notifyState([1, 2], new Set([1, 2, 9]))).toBe('all');
+    expect(notifyState([1, 2], new Set([9]))).toBe('none');
+    expect(notifyState([1, 2], new Set([2]))).toBe('some');
+  });
+  it('un type sans ressource n\'est jamais abonné', () => expect(notifyState([], new Set([1]))).toBe('none'));
 });

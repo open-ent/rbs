@@ -381,7 +381,6 @@ public class ResourceController extends ControllerHelper {
 	@ApiDoc("Add notification")
 	@ResourceFilter(TypeAndResourceAppendPolicy.class)
 	@SecuredAction(value = "rbs.read", type = ActionType.RESOURCE)
-	@Trace(Actions.ADD_NOTIFICATION)
 	public void addNotification (final HttpServerRequest request){
 		UserUtils.getUserInfos(eb, request, new Handler<UserInfos>() {
 			@Override
@@ -401,7 +400,6 @@ public class ResourceController extends ControllerHelper {
 	@ApiDoc("Remove notification")
 	@ResourceFilter(TypeAndResourceAppendPolicy.class)
 	@SecuredAction(value = "rbs.read", type = ActionType.RESOURCE)
-	@Trace(Actions.REMOVE_NOTIFICATION)
 	public void removeNotification (final HttpServerRequest request){
 		UserUtils.getUserInfos(eb, request, new Handler<UserInfos>() {
 			@Override

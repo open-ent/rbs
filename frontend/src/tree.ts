@@ -150,3 +150,11 @@ export function toState(tree: TreeStructure[]): StateStructure[] {
     types: s.types.map((t) => ({ id: t.id, expanded: t.expanded, resources: t.resources.map((r) => ({ id: r.id, selected: r.selected })) })),
   }));
 }
+
+/** État d'abonnement aux notifications d'un type : toutes ses ressources, aucune, ou une partie (« some »). Sans ressource : « none ». */
+export type NotifyState = 'all' | 'none' | 'some';
+export function notifyState(resourceIds: number[], notified: Set<number>): NotifyState {
+  if (resourceIds.length === 0) return 'none';
+  const count = resourceIds.filter((id) => notified.has(id)).length;
+  return count === resourceIds.length ? 'all' : count === 0 ? 'none' : 'some';
+}

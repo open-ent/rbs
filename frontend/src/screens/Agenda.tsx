@@ -8,6 +8,7 @@ import { bookingColor, dayBookings, isSeriesParent, daySegments, isPastSlot, mon
 import { BookingListView } from '../components/BookingListView';
 import { CalendarItem, dayHeading } from '../components/CalendarParts';
 import { ResourceTree } from '../components/ResourceTree';
+import { useNotifications } from '../hooks/useNotifications';
 import { useRbsContext } from '../hooks/useRbsContext';
 import { useResourceTree } from '../hooks/useResourceTree';
 import { dateLocale } from '../locale';
@@ -64,6 +65,7 @@ export function Agenda({ moderation = false }: { moderation?: boolean } = {}) {
   }, [view, cursor, monday, days, weeks, dateFilter]);
 
   const tree = useResourceTree();
+  const notif = useNotifications();
   const bookingsQuery = useQuery({ queryKey: ['rbs', 'agenda', start, end], queryFn: () => api.getBookingsInRange(start, end) });
   // Demandes que l'usager peut traiter, y compris hors de la période affichée côté serveur : on ne garde que celles visibles.
   const unprocessedQuery = useQuery({ queryKey: ['rbs', 'unprocessed'], queryFn: api.getUnprocessedBookings, enabled: ctx.can.validator && (toProcess || moderation) });
@@ -265,7 +267,7 @@ export function Agenda({ moderation = false }: { moderation?: boolean } = {}) {
 
   return (
     <div>
-      {exporting && <ExportDialog onClose={() => setExporting(false)} />}
+      {exporting && <ExportDialog selectedIds={[...selected]} allIds={tree.resources.map((r) => r.id)} onClose={() => setExporting(false)} />}
       {more && (
         <Modal title={t('rbs.agenda.more.title', { defaultValue: '[[count]] réservations — [[day]]', count: more.items.length, day: more.day.toLocaleDateString(locale, { weekday: 'long', day: '2-digit', month: '2-digit' }) })} onClose={() => setMore(null)}>
           <div data-more-items>
@@ -314,6 +316,7 @@ export function Agenda({ moderation = false }: { moderation?: boolean } = {}) {
                 onResource={tree.toggleResource}
                 onExpandStructure={tree.toggleExpandStructure}
                 onExpandType={tree.toggleExpandType}
+                notifications={{ stateOf: notif.stateOf, notified: notif.notified, onType: notif.toggleType, onResource: notif.toggleResource }}
               />
             ) : (
               <p className="text-muted" style={{ fontSize: 13 }}>
