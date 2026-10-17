@@ -422,6 +422,9 @@ export const deleteResource = async (id: number): Promise<void> => {
 };
 
 
+/** Périodes de toutes les ressources de l'usager (une seule requête) : sert à repérer les ressources fermées sans disponibilité. */
+export const getAllAvailabilities = async (): Promise<Availability[]> => (await json<Availability[]>(await fetch('/rbs/availability', { ...base, cache: 'no-store' }))) ?? [];
+
 // ── Notifications (abonnement par ressource ou par type) ──────────────────────────────────────────────────────
 /** Identifiants des ressources dont l'usager reçoit les notifications de réservation. */
 // `no-store` : sans lui le navigateur peut resservir une liste d'abonnements périmée après un changement.
@@ -566,6 +569,7 @@ export const api = {
   getSlotProfileSlots,
   getResourceBookingsBetween,
   getRoomConflicts,
+  getAllAvailabilities,
   getNotifiedResourceIds,
   subscribeResource,
   unsubscribeResource,

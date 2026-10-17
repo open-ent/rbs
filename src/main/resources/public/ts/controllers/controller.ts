@@ -2321,7 +2321,8 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
             for (let b of resource.bookings.all) {
                 if (!b.is_periodic && DateUtils.isNotPast(b.startMoment) && b.quantity) {
                     let timeslotQuantityDispo = AvailabilityUtil.getTimeslotQuantityAvailable(b, resource, null, booking);
-                    let isConflicting = timeslotQuantityDispo < 0;
+                    // Solde = capacité − quantités des AUTRES réservations − la quantité de celle-ci (comme l'interface React).
+                    let isConflicting = timeslotQuantityDispo - b.quantity < 0;
 
                     if (isConflicting && (b.status === model.STATE_CREATED || b.status === model.STATE_VALIDATED)) {
                         $scope.bookingsConflictingResource.push(b);
@@ -2344,10 +2345,10 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
                     availability.quantity = isForDelete ? 0 : availability.quantity;
 
                     if (availability.is_unavailability) {
-                        isConflicting = timeslotQuantityDispo - availability.quantity < 0;
+                        isConflicting = timeslotQuantityDispo - availability.quantity - booking.quantity < 0;
                     }
                     else {
-                        isConflicting = timeslotQuantityDispo + availability.quantity < 0;
+                        isConflicting = timeslotQuantityDispo + availability.quantity - booking.quantity < 0;
                     }
 
                     if (isConflicting && (booking.status === model.STATE_CREATED || booking.status === model.STATE_VALIDATED)) {
@@ -2383,7 +2384,7 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
                     let i = 0;
 
                     while (i < siblingsBookings.length && allSiblingsOk) {
-                        let isSiblingOk = AvailabilityUtil.getTimeslotQuantityAvailable(siblingsBookings[i], resource) >= 0;
+                        let isSiblingOk = AvailabilityUtil.getTimeslotQuantityAvailable(siblingsBookings[i], resource) - siblingsBookings[i].quantity >= 0;
                         allSiblingsOk = allSiblingsOk && isSiblingOk;
                         i++;
                     }

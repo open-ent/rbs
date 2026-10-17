@@ -66,6 +66,11 @@ export function Agenda({ moderation = false }: { moderation?: boolean } = {}) {
 
   const tree = useResourceTree();
   const notif = useNotifications();
+  const allRules = useQuery({ queryKey: ['rbs', 'availability-all'], queryFn: api.getAllAvailabilities, staleTime: 60_000 });
+  const unavailable = useMemo(() => {
+    const open = new Set((allRules.data ?? []).filter((a) => !a.is_unavailability).map((a) => a.resource_id));
+    return new Set(tree.resources.filter((r) => !r.is_available && !open.has(r.id)).map((r) => r.id));
+  }, [allRules.data, tree.resources]);
   const bookingsQuery = useQuery({ queryKey: ['rbs', 'agenda', start, end], queryFn: () => api.getBookingsInRange(start, end) });
   // Demandes que l'usager peut traiter, y compris hors de la période affichée côté serveur : on ne garde que celles visibles.
   const unprocessedQuery = useQuery({ queryKey: ['rbs', 'unprocessed'], queryFn: api.getUnprocessedBookings, enabled: ctx.can.validator && (toProcess || moderation) });
@@ -316,6 +321,7 @@ export function Agenda({ moderation = false }: { moderation?: boolean } = {}) {
                 onResource={tree.toggleResource}
                 onExpandStructure={tree.toggleExpandStructure}
                 onExpandType={tree.toggleExpandType}
+                unavailable={unavailable}
                 notifications={{ stateOf: notif.stateOf, notified: notif.notified, onType: notif.toggleType, onResource: notif.toggleResource }}
               />
             ) : (

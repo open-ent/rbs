@@ -9,6 +9,8 @@ interface Props {
   onResource: (id: number) => void;
   onExpandStructure: (id: string) => void;
   onExpandType: (id: number) => void;
+  /** Ressources fermées par défaut et sans période de disponibilité : non réservables pour l'instant. */
+  unavailable?: Set<number>;
   /** Abonnements aux notifications : cloche d'un type (toutes ses ressources) et d'une ressource. Absent = pas de cloches. */
   notifications?: {
     stateOf: (resourceIds: number[]) => NotifyState;
@@ -23,7 +25,7 @@ interface Props {
  * chaque niveau, dépliage mémorisé. Cocher un niveau coche tout ce qu'il contient.
  * Ex. « Collège A › Salles › Salle 101 ».
  */
-export function ResourceTree({ tree, onStructure, onType, onResource, onExpandStructure, onExpandType, notifications }: Props) {
+export function ResourceTree({ tree, onStructure, onType, onResource, onExpandStructure, onExpandType, notifications, unavailable }: Props) {
   const { t } = useTranslation(['rbs', 'common']);
   if (tree.length === 0) return <p className="text-muted" style={{ fontSize: 13 }}>{t('rbs.agenda.noresource', { defaultValue: 'Aucune ressource' })}</p>;
   const caret = (open: boolean, label: string, onClick: () => void) => (
@@ -71,6 +73,11 @@ export function ResourceTree({ tree, onStructure, onType, onResource, onExpandSt
                             <label className="d-flex align-items-center gap-8 m-0 py-2" style={{ cursor: 'pointer', fontSize: 14 }}>
                               <input type="checkbox" checked={r.selected} onChange={() => onResource(r.id)} aria-label={r.name} />
                               {r.name}
+                              {unavailable?.has(r.id) && (
+                                <span role="img" aria-label={t('rbs.manage.resource.is_available.false', { defaultValue: 'Indisponible' })} title={t('rbs.manage.resource.is_available.false', { defaultValue: 'Indisponible' })} style={{ color: '#b58900' }}>
+                                  ❚❚
+                                </span>
+                              )}
                             </label>
                             {notifications && bell(notifications.notified.has(r.id) ? 'all' : 'none', () => notifications.onResource(r.id), r.name)}
                           </div>
