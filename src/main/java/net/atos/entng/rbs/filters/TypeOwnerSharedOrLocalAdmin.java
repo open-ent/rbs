@@ -51,6 +51,14 @@ public class TypeOwnerSharedOrLocalAdmin implements ResourcesProvider {
 	public void authorize(final HttpServerRequest request, Binding binding, final UserInfos user,
 			final Handler<Boolean> handler) {
 
+		// Le super-admin plateforme n'a ni ownership ni partage ni scope d'admin local sur un
+		// type de ressource d'un établissement tiers ; sans ce contournement, RBS lui est
+		// inaccessible en dehors de son propre établissement.
+		if (user.isADMC()) {
+			handler.handle(true);
+			return;
+		}
+
 		SqlConf conf = SqlConfs.getConf(ResourceTypeController.class.getName());
 		String resourceTypeId = request.params().get(conf.getResourceIdLabel());
 

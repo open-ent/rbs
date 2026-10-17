@@ -495,8 +495,17 @@ Resource.prototype.toJSON = function () {
         max_delay: (this.hasMaxDelay) ? this.max_delay : undefined,
         color: this.color,
         validation: this.validation,
-        quantity: this.quantity
+        quantity: this.quantity,
+        capacity: (this.capacity === '' || this.capacity === undefined) ? null : this.capacity,
+        is_mobile: !!this.is_mobile,
+        requires_key: !!this.requires_key
     };
+    // equipmentIds : uniquement à la création (pas d'id encore) — une ressource existante passe
+    // par la route dédiée PUT /resource/:id/equipment (cf. controller.ts saveResourceEquipment),
+    // déjà appelée immédiatement à chaque ajout/retrait, pas au moment du save du formulaire.
+    if (!this.id && this.equipment && this.equipment.length) {
+        json.equipmentIds = this.equipment.map((e: any) => e.id);
+    }
     if (this.was_available !== undefined) {
         json.was_available = this.was_available;
     }
@@ -621,7 +630,8 @@ ResourceType.prototype.toJSON = function () {
         name: this.name,
         validation: this.validation,
         color: this.color,
-        extendcolor: this.extendcolor
+        extendcolor: this.extendcolor,
+        category: this.category || 'GENERAL'
     };
     // Send school id only at creation
     if (!this.id) {
@@ -727,16 +737,16 @@ function Slot(book) {
 
 function SlotJson(start, end) {
     return {
-        start_date: (moment.utc(start._i).add('hours', -moment(this.startMoment._i).format('Z').split(':')[0])).unix(),
-        end_date: (moment.utc(end._i).add('hours', -moment(this.startMoment._i).format('Z').split(':')[0])).unix(),
+        start_date: (moment.utc(start._i).add(-moment(this.startMoment._i).format('Z').split(':')[0], 'hours')).unix(),
+        end_date: (moment.utc(end._i).add(-moment(this.startMoment._i).format('Z').split(':')[0], 'hours')).unix(),
         iana: moment.tz.guess()
     }
 }
 
 Slot.prototype.toJson = function () {
     return {
-        start_date: (moment.utc(this.startMoment._i).add('hours', -moment(this.startMoment._i).format('Z').split(':')[0])).unix(),
-        end_date: (moment.utc(this.endMoment._i).add('hours', -moment(this.startMoment._i).format('Z').split(':')[0])).unix(),
+        start_date: (moment.utc(this.startMoment._i).add(-moment(this.startMoment._i).format('Z').split(':')[0], 'hours')).unix(),
+        end_date: (moment.utc(this.endMoment._i).add(-moment(this.startMoment._i).format('Z').split(':')[0], 'hours')).unix(),
         iana: moment.tz.guess()
     }
 };

@@ -1,0 +1,116 @@
+<div class="row" guard-root="edtImportRoot">
+	<h2><i18n>rbs.edtImport.title</i18n></h2>
+
+	<article class="twelve cell">
+		<p class="info"><i18n>rbs.edtImport.help</i18n></p>
+
+		<form name="edtImportNgForm" novalidate>
+			<div class="row">
+				<label class="four cell"><i18n>rbs.edtImport.weekStart</i18n></label>
+				<input type="date" class="eight cell" name="weekStart" ng-model="edtImportForm.weekStart" required input-guard/>
+			</div>
+			<div class="row">
+				<label class="four cell"></label>
+				<div class="eight cell" style="font-style: italic; color: #767676;">
+					<i18n>rbs.edtImport.weekStart.hint</i18n>
+				</div>
+			</div>
+
+			<div class="row">
+				<label class="four cell"><i18n>rbs.edtImport.weeksToScan</i18n></label>
+				<input type="number" min="1" max="8" class="eight cell" name="weeksToScan" ng-model="edtImportForm.weeksToScan" required input-guard/>
+			</div>
+			<div class="row">
+				<label class="four cell"></label>
+				<div class="eight cell" style="font-style: italic; color: #767676;">
+					<i18n>rbs.edtImport.weeksToScan.hint</i18n>
+				</div>
+			</div>
+
+			<div class="row">
+				<label class="four cell"><i18n>rbs.edtImport.periodicEndDate</i18n></label>
+				<input type="date" class="eight cell" name="periodicEndDate" ng-model="edtImportForm.periodicEndDate" required input-guard/>
+			</div>
+			<div class="row">
+				<label class="four cell"></label>
+				<div class="eight cell" style="font-style: italic; color: #767676;">
+					<i18n>rbs.edtImport.periodicEndDate.hint</i18n>
+				</div>
+			</div>
+
+			<div class="warning" ng-if="edtImportError">[[edtImportError]]</div>
+
+			<div class="row" ng-if="!edtImportLoading">
+				<button class="right-magnet" ng-click="previewEdtImport()" ng-disabled="edtImportNgForm.$invalid"><i18n>rbs.edtImport.preview</i18n></button>
+				<input type="button" class="cancel right-magnet" i18n-value="cancel" ng-click="closeEdtImport()"/>
+			</div>
+			<div class="row" ng-if="edtImportLoading">
+				<button class="right-magnet cancel disabled" disabled><i18n>rbs.processing</i18n></button>
+			</div>
+		</form>
+
+		<div ng-if="edtImportReport" class="row top-spacing-two">
+			<hr/>
+			<h3 ng-if="!edtImportReport.confirmed"><i18n>rbs.edtImport.report.preview.title</i18n></h3>
+			<h3 ng-if="edtImportReport.confirmed"><i18n>rbs.edtImport.report.confirmed.title</i18n></h3>
+
+			<p><i18n>rbs.edtImport.report.created</i18n> : <strong>[[edtImportReport.created.length]]</strong></p>
+			<div ng-if="edtImportReport.created.length" class="info">
+				<ul>
+					<li ng-repeat="c in edtImportReport.created">[[c.bookingReason]]</li>
+				</ul>
+			</div>
+
+			<p><i18n>rbs.edtImport.report.skippedExisting</i18n> : <strong>[[edtImportReport.skippedExisting.length]]</strong></p>
+			<div ng-if="edtImportReport.skippedExisting.length" class="info">
+				<ul>
+					<li ng-repeat="s in edtImportReport.skippedExisting">[[s.bookingReason]]</li>
+				</ul>
+			</div>
+
+			<p><i18n>rbs.edtImport.report.conflicts</i18n> : <strong>[[edtImportReport.conflicts.length]]</strong></p>
+			<p style="font-style: italic; color: #767676;">
+				<i18n>rbs.edtImport.report.conflicts.hint</i18n>
+			</p>
+			<div ng-if="edtImportReport.conflicts.length" class="warning">
+				<ul>
+					<li ng-repeat="c in edtImportReport.conflicts">
+						[[c.bookingReason]] <i18n>rbs.edtImport.report.conflicts.alreadyBookedBy</i18n>
+						<ul>
+							<li ng-repeat="e in c.existingBookings">[[e.range]]</li>
+						</ul>
+					</li>
+				</ul>
+			</div>
+
+			<p><i18n>rbs.edtImport.report.unmatchedRooms</i18n> : <strong>[[edtImportReport.unmatchedRooms.length]]</strong></p>
+			<p style="font-style: italic; color: #767676;">
+				<i18n>rbs.edtImport.report.unmatchedRooms.hint</i18n>
+			</p>
+			<div ng-if="edtImportReport.unmatchedRooms.length" class="info">
+				<ul>
+					<li ng-repeat="r in edtImportReport.unmatchedRooms">
+						[[r.roomLabel]] ([[r.occurrences]])
+						<ul>
+							<li ng-repeat="c in r.courseLabels">[[c]]</li>
+						</ul>
+					</li>
+				</ul>
+			</div>
+
+			<p><i18n>rbs.edtImport.report.obsolete</i18n> : <strong>[[edtImportReport.obsolete.length]]</strong></p>
+			<p style="font-style: italic; color: #767676;">
+				<i18n>rbs.edtImport.report.obsolete.hint</i18n>
+			</p>
+			<div ng-if="edtImportReport.obsolete.length" class="warning">
+				<ul>
+					<li ng-repeat="o in edtImportReport.obsolete">[[o.bookingReason]]</li>
+				</ul>
+			</div>
+
+			<div class="row" ng-if="!edtImportReport.confirmed && (edtImportReport.created.length || edtImportReport.obsolete.length) && !edtImportLoading">
+				<button class="right-magnet" ng-click="confirmEdtImport()"><i18n>rbs.edtImport.confirm</i18n></button>
+			</div>
+		</div>
+	</article>
+</div>

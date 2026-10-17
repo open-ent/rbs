@@ -107,8 +107,12 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 		FutureHelper.all(bookingsFuture)
 				.onSuccess((res) -> {
 					JsonArray savedBookings = new JsonArray();
+					// Réservation refusée (créneau déjà pris) : résultat vide, simplement absente de la
+					// réponse — l'appelant compare aux ressources demandées pour signaler le conflit.
+					// Ex. salle 201 déjà prise : getValue(0) levait une exception et le bus ne répondait plus.
 					bookingsFuture.stream()
 							.map((Future::result))
+							.filter((savedBooking) -> savedBooking != null && !savedBooking.isEmpty())
 							.forEach((savedBooking) -> savedBookings.add(savedBooking.getValue(0)));
 
 					promise.complete(savedBookings);
@@ -132,6 +136,20 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 		// Lock query to avoid race condition
 		statementsBuilder.raw(LOCK_BOOKING_QUERY);
 
+		final int nbSlots = booking.getSlots().size();
+
+		// Mécanisme de priorité : si l'utilisateur courant peut lui-même valider sur cette
+		// ressource (cf. appendCanValidateCondition), sa nouvelle réservation ne doit pas être
+		// bloquée par une simple demande encore en attente (CREATED) d'un autre utilisateur —
+		// cette demande est refusée automatiquement (même comportement que la validation
+		// manuelle d'une réservation concurrente, cf. processBooking). Exécuté AVANT les inserts
+		// ci-dessous, dans la même transaction, pour que getCreationBooking() (dont le blocage de
+		// conflit ignore déjà les REFUSED) ne voie plus ces demandes comme un obstacle.
+		booking.getSlots().forEach(slot -> {
+			JsonObject refuseStatement = getRefuseConcurrentCreatedBookings(resourceId, slot, user);
+			statementsBuilder.prepared(refuseStatement.getString("query"), refuseStatement.getJsonArray("values"));
+		});
+
 		booking.getSlots().forEach(slot-> {
 			JsonObject statement = getCreationBooking(resourceId, booking, slot, user);
 			statementsBuilder.prepared(statement.getString("query"), statement.getJsonArray("values"));
@@ -150,19 +168,72 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 				statementsResults.remove(0);
 				statementsResults.remove(0);
 
-				JsonArray bookings = new JsonArray();
-				// Looping our statementsResult as each JsonObject is inside a JsonArray then we clear data by creating
-				// new JsonArray
+				// Les nbSlots premiers statements restants sont les refus automatiques (0 à
+				// plusieurs lignes chacun), les nbSlots suivants sont les créations elles-mêmes
+				// (0 ou 1 ligne chacun, cf. contrôle de capacité de getCreationBooking). Le contrôleur
+				// (getBookingCreationResponse) fait `renderJson(..., bookings.getJsonObject(0))` en
+				// s'attendant à LA réservation créée en 1er élément — les créations doivent donc
+				// rester devant les refus dans le tableau final, quel que soit l'ordre d'exécution
+				// SQL (refus avant créations, nécessaire pour libérer la capacité avant le contrôle).
+				JsonArray refusedRows = new JsonArray();
+				JsonArray createdRows = new JsonArray();
 				for (int i = 0; i < statementsResults.size(); i++) {
-					if (Boolean.FALSE.equals(statementsResults.getJsonArray(i).isEmpty())) {
-						bookings.add(statementsResults.getJsonArray(i).getJsonObject(0));
+					JsonArray statementRows = statementsResults.getJsonArray(i);
+					JsonArray target = (i < nbSlots) ? refusedRows : createdRows;
+					for (int j = 0; j < statementRows.size(); j++) {
+						target.add(statementRows.getJsonObject(j));
 					}
 				}
+
+				JsonArray bookings = new JsonArray();
+				bookings.addAll(createdRows);
+				bookings.addAll(refusedRows);
 				handler.handle(new Either.Right<>(bookings));
 			}
 		});
 
 
+	}
+
+	/**
+	 * Condition SQL "l'utilisateur courant peut lui-même valider une réservation sur cette
+	 * ressource" — même définition que le filtre TypeAndResourceAppendPolicy (partage
+	 * "processBooking" **ou** "rbs.booking.publish" sur le type ou la ressource, administrateur
+	 * local de l'établissement, ou propriétaire du type/de la ressource). "processBooking"
+	 * (Valideur) reste un superset : il autorise en plus à valider les demandes des autres.
+	 * "rbs.booking.publish" (BookingController::canAutoValidate) est le nouveau droit fin, qui ne
+	 * fait qu'auto-valider les réservations DU titulaire lui-même. Suppose un FROM portant les
+	 * alias `r` (rbs.resource) et `t2` (rbs.resource_type, joint sur r.type_id = t2.id) dans la
+	 * requête appelante. Ajoute les valeurs correspondantes à `values`, dans l'ordre d'apparition.
+	 */
+	private String appendCanValidateCondition(JsonArray values, UserInfos user) {
+		List<String> groupsAndUserIds = new ArrayList<>();
+		groupsAndUserIds.add(user.getUserId());
+		if (user.getGroupsIds() != null) {
+			groupsAndUserIds.addAll(user.getGroupsIds());
+		}
+		List<String> localAdminScope = getLocalAdminScope(user);
+
+		StringBuilder canValidate = new StringBuilder();
+		canValidate.append("(EXISTS (SELECT 1 FROM rbs.resource_type_shares ts WHERE ts.resource_id = r.type_id")
+				.append(" AND ts.member_id IN ").append(Sql.listPrepared(groupsAndUserIds.toArray()))
+				.append(" AND ts.action IN ('net-atos-entng-rbs-controllers-BookingController|processBooking',")
+				.append(" 'net-atos-entng-rbs-controllers-BookingController|canAutoValidate'))");
+		values.addAll(new JsonArray(groupsAndUserIds));
+
+		canValidate.append(" OR EXISTS (SELECT 1 FROM rbs.resource_shares rs WHERE rs.resource_id = r.id")
+				.append(" AND rs.member_id IN ").append(Sql.listPrepared(groupsAndUserIds.toArray()))
+				.append(" AND rs.action IN ('net-atos-entng-rbs-controllers-BookingController|processBooking',")
+				.append(" 'net-atos-entng-rbs-controllers-BookingController|canAutoValidate'))");
+		values.addAll(new JsonArray(groupsAndUserIds));
+
+		if (localAdminScope != null && !localAdminScope.isEmpty()) {
+			canValidate.append(" OR t2.school_id IN ").append(Sql.listPrepared(localAdminScope.toArray()));
+			values.addAll(new JsonArray(localAdminScope));
+		}
+		canValidate.append(" OR t2.owner = ? OR r.owner = ?)");
+		values.add(user.getUserId()).add(user.getUserId());
+		return canValidate.toString();
 	}
 
 	private JsonObject getCreationBooking(final String resourceId, final Booking booking, final Slot slot, final UserInfos user) {
@@ -179,12 +250,13 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 				.append(" SELECT  ?, ?, ?, ?,");
 		values.add(rId).add(user.getUserId()).add(booking.getBookingReason()).add(booking.getBookingQuantity());
 
-		// If validation is activated, the booking is created with status "created".
-		// Otherwise, it is created with status "validated".
-		// TODO V2 : la reservation doit etre automatiquement validee si le demandeur
-		// est valideur
-		query.append(" (SELECT CASE WHEN (r.validation IS true) THEN ? ELSE ? END")
-				.append(" FROM rbs.resource AS r")
+		// Si la validation est activée, la réservation part en attente ("created") — SAUF si le
+		// demandeur peut lui-même la valider : elle est alors directement "validated", sans
+		// passer par une modération que le même utilisateur pourrait de toute façon accorder
+		// lui-même (cf. appendCanValidateCondition).
+		query.append(" (SELECT CASE WHEN (r.validation IS true) AND NOT ").append(appendCanValidateCondition(values, user))
+				.append(" THEN ? ELSE ? END")
+				.append(" FROM rbs.resource AS r INNER JOIN rbs.resource_type AS t2 ON r.type_id = t2.id")
 				.append(" WHERE r.id = ?),");
 		values.add(CREATED.status()).add(VALIDATED.status()).add(rId);
 
@@ -213,9 +285,53 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 				.add(toSQLTimestamp(slot.getStartUTC()))
 				.add(booking.getBookingQuantity());
 
-		// Returning result
-		query.append(" RETURNING id, quantity, status, to_char(start_date, '").append(DATE_FORMAT)
+		// Returning result — resource_id inclus : permet à l'appelant (pont EDT/diary) de savoir
+		// PRÉCISÉMENT quelles ressources demandées ont vraiment été réservées, en comparant à la
+		// liste demandée (une ressource absente de la réponse = bloquée par le contrôle de capacité).
+		// booking_reason inclus : repris par le pont RBS->calendar (BookingController
+		// ::notifyStructureCalendarIfValidated) pour titrer l'événement créé dans l'agenda
+		// d'établissement avec le motif réel plutôt que seulement le nom de la ressource.
+		query.append(" RETURNING id, resource_id, quantity, status, booking_reason, to_char(start_date, '").append(DATE_FORMAT)
 				.append("') AS start_date, to_char(end_date, '").append(DATE_FORMAT).append("') AS end_date");
+
+		return new JsonObject().put("query", query).put("values", values);
+	}
+
+	/**
+	 * Refuse automatiquement toute demande encore en attente (CREATED, jamais VALIDATED — écraser
+	 * une réservation déjà confirmée reste réservé à processBooking) qui chevauche le créneau
+	 * demandé sur cette ressource, SEULEMENT si l'utilisateur courant peut lui-même valider une
+	 * réservation sur cette ressource (même condition que getCreationBooking, cf.
+	 * appendCanValidateCondition — sinon un simple enseignant pourrait faire refuser les demandes
+	 * des autres en créant la sienne). Exécutée avant l'insert de getCreationBooking, dans la même
+	 * transaction, pour que celui-ci ne soit plus bloqué par ces demandes désormais REFUSED.
+	 */
+	private JsonObject getRefuseConcurrentCreatedBookings(final String resourceId, final Slot slot, final UserInfos user) {
+		Object rId = parseId(resourceId);
+		StringBuilder query = new StringBuilder();
+		JsonArray values = new JsonArray();
+
+		// appendCanValidateCondition suppose un FROM portant les alias r (rbs.resource) et t2
+		// (rbs.resource_type, joint sur r.type_id = t2.id) — d'où le FROM ci-dessous, requis par
+		// la syntaxe UPDATE ... FROM de PostgreSQL pour joindre b (rbs.booking) à r/t2.
+		JsonArray canValidateValues = new JsonArray();
+		String canValidateCondition = appendCanValidateCondition(canValidateValues, user);
+
+		query.append("UPDATE rbs.booking b SET status = ?, modified = NOW()")
+				.append(" FROM rbs.resource AS r INNER JOIN rbs.resource_type AS t2 ON r.type_id = t2.id")
+				.append(" WHERE r.id = b.resource_id AND b.resource_id = ? AND b.status = ?")
+				.append(" AND b.start_date < ? AND b.end_date > ?")
+				.append(" AND r.id = ? AND ").append(canValidateCondition);
+		values.add(REFUSED.status()).add(rId).add(CREATED.status())
+				.add(toSQLTimestamp(slot.getEndUTC()))
+				.add(toSQLTimestamp(slot.getStartUTC()))
+				.add(rId);
+		values.addAll(canValidateValues);
+
+		query.append(" RETURNING b.id, b.resource_id, b.owner, b.status, to_char(b.start_date, '").append(DATE_FORMAT)
+				.append("') AS start_date, to_char(b.end_date, '").append(DATE_FORMAT).append("') AS end_date");
+		// Vérifié en dev le 2026-09-21 : la notification BOOKING-REFUSED est bien émise vers le
+		// propriétaire de la demande auto-refusée (collection timeline.entcore, pas timeline.ong).
 
 		return new JsonObject().put("query", query).put("values", values);
 	}
@@ -299,19 +415,22 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 					.add(booking.getPeriodicity())
 					.add(occurrences != 0 ? occurrences : null);
 
+			final JsonArray canValidateValues = new JsonArray();
 			// Insert children (0 rows if conflict)
 			query.append(" INSERT INTO rbs.booking")
 					.append(" (resource_id, owner, booking_reason, quantity, start_date, end_date,")
 					.append(" parent_booking_id, status, refusal_reason)")
 					.append(" SELECT ?, ?, ?, ?, s.rstart, s.rend, pb.id,")
-					.append(" (SELECT CASE WHEN (r.validation IS true) THEN ? ELSE ? END")
-					.append("  FROM rbs.resource AS r WHERE r.id = ?), NULL")
+					.append(" (SELECT CASE WHEN (r.validation IS true) AND NOT ").append(appendCanValidateCondition(canValidateValues, user))
+					.append(" THEN ? ELSE ? END")
+					.append("  FROM rbs.resource AS r INNER JOIN rbs.resource_type AS t2 ON r.type_id = t2.id WHERE r.id = ?), NULL")
 					.append(" FROM (VALUES ");
 			values.add(rId)
 					.add(user.getUserId())
 					.add(booking.getBookingReason())
 					.add(booking.getBookingQuantity())
-					.add(CREATED.status()).add(VALIDATED.status()).add(rId);
+					.addAll(canValidateValues)
+						.add(CREATED.status()).add(VALIDATED.status()).add(rId);
 
 			firstItem = true;
 			for (Slot childSlot : allChildSlots) {
@@ -478,19 +597,22 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 				.append(" DELETE FROM rbs.booking")
 				.append(" WHERE parent_booking_id IN (SELECT id FROM parent_update))");
 
+		final JsonArray canValidateValues = new JsonArray();
 		// Insert new children
 		cteQuery.append(" INSERT INTO rbs.booking")
 				.append(" (resource_id, owner, booking_reason, quantity, start_date, end_date,")
 				.append(" parent_booking_id, status, refusal_reason)")
 				.append(" SELECT ?, ?, ?, ?, s.rstart, s.rend, pu.id,")
-				.append(" (SELECT CASE WHEN (r.validation IS true) THEN ? ELSE ? END")
-				.append("  FROM rbs.resource AS r WHERE r.id = ?), NULL")
+				.append(" (SELECT CASE WHEN (r.validation IS true) AND NOT ").append(appendCanValidateCondition(canValidateValues, user))
+				.append(" THEN ? ELSE ? END")
+				.append("  FROM rbs.resource AS r INNER JOIN rbs.resource_type AS t2 ON r.type_id = t2.id WHERE r.id = ?), NULL")
 				.append(" FROM (VALUES ");
 		cteValues.add(rId)
 				.add(user.getUserId())
 				.add(booking.getBookingReason())
 				.add(booking.getBookingQuantity())
-				.add(CREATED.status()).add(VALIDATED.status()).add(rId);
+				.addAll(canValidateValues)
+					.add(CREATED.status()).add(VALIDATED.status()).add(rId);
 
 		firstItem = true;
 		for (Slot childSlot : allChildSlots) {
@@ -718,12 +840,33 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 			processValues.add(bId).add(bId).add(bId).add(rId).add(bId);
 		}
 
-		StringBuilder returningClause = new StringBuilder(" RETURNING id, status, owner, ")
+		StringBuilder returningClause = 		// booking_reason inclus pour la même raison que createBooking (cf. commentaire là-bas).
+		StringBuilder returningClause = new StringBuilder(" RETURNING id, status, owner, booking_reason, ")
 				.append(" to_char(start_date AT TIME ZONE 'UTC' AT TIME ZONE 'EUROPE/PARIS', '").append(DATE_FORMAT).append("') AS start_date,")
 				.append(" to_char(end_date AT TIME ZONE 'UTC' AT TIME ZONE 'EUROPE/PARIS', '").append(DATE_FORMAT).append("') AS end_date");
 
 		processQuery.append(returningClause);
 		statementsBuilder.prepared(processQuery.toString(), processValues);
+
+		// 4. Valider une réservation refuse automatiquement les autres demandes encore en attente
+		// (CREATED) qui chevauchent le même créneau sur la même ressource — mécanisme de priorité
+		// (ex. la direction valide sa propre demande, les demandes concurrentes des enseignants
+		// tombent). Le contrôleur (BookingController::processBooking) attend déjà ce 4e statement
+		// pour notifier ces réservations ("concurrentBookings", results.size() >= 4) — jamais
+		// implémenté côté service jusqu'ici. Uniquement quand on VALIDE (pas quand on refuse/
+		// suspend une réservation, qui ne doit rien changer d'autre).
+		if (newStatus == VALIDATED.status()) {
+			StringBuilder concurrentQuery = new StringBuilder();
+			JsonArray concurrentValues = new JsonArray();
+			concurrentQuery.append("UPDATE rbs.booking b2 SET status = ?, modified = NOW() ")
+					.append("WHERE b2.resource_id = ? AND b2.id <> ? AND b2.status = ? ")
+					.append("AND b2.start_date < (SELECT end_date FROM rbs.booking WHERE id = ?) ")
+					.append("AND b2.end_date > (SELECT start_date FROM rbs.booking WHERE id = ?) ")
+					.append(returningClause.toString().replace("start_date AT TIME ZONE", "b2.start_date AT TIME ZONE")
+							.replace("end_date AT TIME ZONE", "b2.end_date AT TIME ZONE"));
+			concurrentValues.add(REFUSED.status()).add(rId).add(bId).add(CREATED.status()).add(bId).add(bId);
+			statementsBuilder.prepared(concurrentQuery.toString(), concurrentValues);
+		}
 
 		// Send queries to event bus
 		Sql.getInstance().transaction(statementsBuilder.build(), validResultsHandler(handler));
@@ -960,16 +1103,64 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 
 	@Override
 	public void listBookingsByResource(final String resourceId, final Handler<Either<String, JsonArray>> handler) {
+		listBookingsByResource(resourceId, null, null, handler);
+	}
+
+	@Override
+	public void listBookingsByResource(final String resourceId, final String startAt, final String endAt,
+			final Handler<Either<String, JsonArray>> handler) {
 		StringBuilder query = new StringBuilder();
+		JsonArray values = new JsonArray();
+
 		query.append("SELECT b.*, u.username AS owner_name, m.username AS moderator_name")
 				.append(" FROM rbs.booking AS b").append(" INNER JOIN rbs.users AS u ON b.owner = u.id")
-				.append(" LEFT JOIN rbs.users AS m on b.moderator_id = m.id").append(" WHERE b.resource_id = ?")
-				.append(" ORDER BY b.start_date, b.end_date");
-
-		JsonArray values = new JsonArray();
+				.append(" LEFT JOIN rbs.users AS m on b.moderator_id = m.id").append(" WHERE b.resource_id = ?");
 		values.add(parseId(resourceId));
 
+		// Filtre optionnel par période (vue de disponibilité, cf. BookingController) : chevauchement
+		// classique, mêmes bornes que getCreationBooking (start < fin demandée ET end > début demandé).
+		// Bornes reçues en heure de Paris, réservations stockées en UTC : conversion avant comparaison.
+		// Ex. 16:15-17:00 le 16/11 (hiver) → 15:15-16:00 UTC ; sans elle, la salle paraissait libre.
+		if (!StringUtils.isEmpty(startAt) && !StringUtils.isEmpty(endAt)) {
+			query.append(" AND b.start_date < (?::timestamp AT TIME ZONE 'Europe/Paris' AT TIME ZONE 'UTC')")
+					.append(" AND b.end_date > (?::timestamp AT TIME ZONE 'Europe/Paris' AT TIME ZONE 'UTC')");
+			values.add(endAt).add(startAt);
+		}
+
+		query.append(" ORDER BY b.start_date, b.end_date");
+
 		Sql.getInstance().prepared(query.toString(), values, validResultHandler(handler));
+	}
+
+	/**
+	 * Réservation qui occupe vraiment la ressource, même règle que le conflit de création
+	 * (getCreationBooking) : non refusée, et pas la réservation « mère » d'une série périodique.
+	 */
+	private static final String BLOCKING_BOOKING = " AND b.status <> ? AND NOT (b.is_periodic = true AND b.parent_booking_id IS NULL)";
+
+	@Override
+	public void listBlockingBookings(final List<Integer> resourceIds, final String startAt, final String endAt,
+			final Handler<Either<String, JsonArray>> handler) {
+		if (resourceIds == null || resourceIds.isEmpty()) {
+			handler.handle(new Either.Right<>(new JsonArray()));
+			return;
+		}
+		// Bornes en heure de Paris (comme booking-conflicts), réservations stockées en UTC ; début et
+		// fin renvoyés en heure de Paris pour que l'appelant reconnaisse ses propres réservations.
+		// Ex. ressources [12, 15], lundi 16/11 10:00-11:00 →
+		// [{id: 4093, resource_id: 12, start_local: "2026-11-16T10:00:00", end_local: "2026-11-16T11:00:00"}].
+		String query = "SELECT b.id, b.resource_id"
+				+ ", to_char(b.start_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris', 'YYYY-MM-DD\"T\"HH24:MI:SS') AS start_local"
+				+ ", to_char(b.end_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris', 'YYYY-MM-DD\"T\"HH24:MI:SS') AS end_local"
+				+ " FROM rbs.booking AS b"
+				+ " WHERE b.resource_id IN " + Sql.listPrepared(resourceIds.toArray())
+				+ " AND b.start_date < (?::timestamp AT TIME ZONE 'Europe/Paris' AT TIME ZONE 'UTC')"
+				+ " AND b.end_date > (?::timestamp AT TIME ZONE 'Europe/Paris' AT TIME ZONE 'UTC')"
+				+ BLOCKING_BOOKING;
+		JsonArray values = new JsonArray();
+		resourceIds.forEach(values::add);
+		values.add(endAt).add(startAt).add(REFUSED.status());
+		Sql.getInstance().prepared(query, values, validResultHandler(handler));
 	}
 
 	@Override
@@ -1075,13 +1266,14 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 
 	private void getResourceName(final String bookingId, final Handler<Either<String, JsonObject>> handler,
 			boolean withBooking) {
-		StringBuilder query = new StringBuilder("SELECT r.name AS resource_name");
+		StringBuilder query = new StringBuilder("SELECT r.name AS resource_name, t.school_id AS structure_id");
 		if (withBooking) {
 			query.append(", b.owner, b.is_periodic,").append("to_char(b.start_date, '").append(DATE_FORMAT)
 					.append("') as start_date,").append("to_char(b.end_date, '").append(DATE_FORMAT)
 					.append("') as end_date").append(", b.parent_booking_id");
 		}
 		query.append(" FROM rbs.resource AS r").append(" INNER JOIN rbs.booking AS b on r.id = b.resource_id")
+				.append(" INNER JOIN rbs.resource_type AS t on r.type_id = t.id")
 				.append(" WHERE b.id = ?");
 
 		Sql.getInstance().prepared(query.toString(),

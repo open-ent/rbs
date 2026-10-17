@@ -56,6 +56,17 @@ public interface ResourceTypeService {
 						   final Handler<Either<String, JsonArray>> handler);
 
 	/**
+	 * Get the full, unfiltered list of resource types for a structure — no rights/sharing check,
+	 * for internal (event bus) use only by other modules that need to know what RBS resources
+	 * exist for a structure regardless of the acting user's own RBS rights (ex. EDT/cahier de
+	 * texte proposant un sélecteur de salle à n'importe quel enseignant).
+	 *
+	 * @param structureId {@link String} id of the target structure
+	 * @param handler handler
+	 */
+	void listAllForStructure(final String structureId, final Handler<Either<String, JsonArray>> handler);
+
+	/**
 	 * Get the moderator list of current resource type
 	 *
 	 * @param typeId  : id of current resource type

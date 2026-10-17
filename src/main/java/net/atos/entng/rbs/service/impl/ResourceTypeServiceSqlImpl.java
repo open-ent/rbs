@@ -64,10 +64,16 @@ public class ResourceTypeServiceSqlImpl implements ResourceTypeService {
 				.append(" LEFT JOIN rbs.members AS m ON (ts.member_id = m.id AND m.group_id IS NOT NULL)");
 
 		boolean isLocalAdmin = isLocalAdmin(user);
+		// Un super-admin (ADMC) n'a jamais la fonction ADMIN_LOCAL et n'est propriétaire/partagé
+		// sur aucun type qu'il n'a pas lui-même créé : sans ce contournement, `list()` ne
+		// retournait aucun type pour un établissement qu'il n'administre pas localement, alors
+		// que le filtre de droits sur les routes /:id (TypeOwnerSharedOrLocalAdmin) le laisse
+		// déjà tout voir — symétrie rétablie ici, à la source du listing.
+		boolean seesAllTypesOfStructure = Boolean.TRUE.equals(isLocalAdmin) || user.isADMC();
 
-		// Local admin targeting one structure
+		// Local admin (ou super-admin) targeting one structure
 		// A local administrator of a given school can see its types, even if he is not owner or manager of these types
-		if (Boolean.TRUE.equals(isLocalAdmin) && (structureId != null)) {
+		if (seesAllTypesOfStructure && (structureId != null)) {
 			query.append(" WHERE t.school_id = ?");
 			values.add(structureId);
 		} else {
@@ -103,6 +109,22 @@ public class ResourceTypeServiceSqlImpl implements ResourceTypeService {
 	}
 
 
+
+	@Override
+	public void listAllForStructure(final String structureId, final Handler<Either<String, JsonArray>> handler) {
+		StringBuilder query = new StringBuilder();
+		JsonArray values = new JsonArray();
+
+		query.append("SELECT t.* FROM rbs.resource_type AS t WHERE t.school_id = ? ORDER BY t.name");
+		values.add(structureId);
+
+		Sql.getInstance().prepared(query.toString(), values, new Handler<Message<JsonObject>>() {
+			@Override
+			public void handle(Message<JsonObject> event) {
+				handler.handle(validResult(event));
+			}
+		});
+	}
 
 	@Override
 	public void getModeratorsIds(final String typeId, final Handler<Either<String, JsonArray>> handler) {

@@ -35,7 +35,9 @@ import net.atos.entng.rbs.core.constants.Actions;
 import net.atos.entng.rbs.core.constants.Field;
 import net.atos.entng.rbs.filters.TypeAndResourceAppendPolicy;
 import net.atos.entng.rbs.filters.TypeOwnerSharedOrLocalAdmin;
+import net.atos.entng.rbs.service.EquipmentService;
 import net.atos.entng.rbs.service.ResourceService;
+import net.atos.entng.rbs.service.impl.EquipmentServiceSqlImpl;
 import net.atos.entng.rbs.service.impl.ResourceServiceSqlImpl;
 
 import org.entcore.common.controller.ControllerHelper;
@@ -66,15 +68,19 @@ public class ResourceController extends ControllerHelper {
 	static final String RESOURCE_NAME = "resource";
 	private static final String RESOURCE_AVAILABLE_EVENT_TYPE = RBS_NAME + "_RESOURCE_AVAILABLE";
 	private static final String RESOURCE_UNAVAILABLE_EVENT_TYPE = RBS_NAME + "_RESOURCE_UNAVAILABLE";
+	// Même valeur que le dernier recours du front (models.ts: LAST_DEFAULT_COLOR)
+	private static final String DEFAULT_COLOR = "#4bafd5";
 
 	private static final String SCHEMA_RESOURCE_CREATE = "createResource";
 	private static final String SCHEMA_RESOURCE_UPDATE = "updateResource";
 
 	private final ResourceService resourceService;
+	private final EquipmentService equipmentService;
 	private final EventHelper eventHelper;
 
 	public ResourceController() {
 		resourceService = new ResourceServiceSqlImpl();
+		equipmentService = new EquipmentServiceSqlImpl();
 		final EventStore eventStore = EventStoreFactory.getFactory().getEventStore(Rbs.class.getSimpleName());
 		this.eventHelper = new EventHelper(eventStore);
 	}
@@ -158,8 +164,38 @@ public class ResourceController extends ControllerHelper {
 							}
 							String resourceTypeId = request.params().get("id");
 							resource.put("type_id", resourceTypeId);
+							// Une ressource sans couleur (null) ne peut plus jamais être modifiée ensuite
+							// (PUT rejeté par le schéma createResource/updateResource) : on force une
+							// couleur par défaut à la création plutôt que de laisser passer null.
+							String color = resource.getString("color");
+							if (color == null || color.isEmpty()) {
+								resource.put("color", DEFAULT_COLOR);
+							}
+							// Un local physique (salle, amphithéâtre, gymnase...) est unique : la
+							// "quantité" n'a de sens que pour du matériel mobile. Sécurité côté
+							// serveur en plus du champ désactivé côté IHM (défense en profondeur).
+							if (!resource.getBoolean("is_mobile", false)) {
+								resource.put("quantity", 1);
+							}
+							// equipmentIds n'est pas une colonne de rbs.resource (association séparée,
+							// cf. rbs.resource_equipment) : createResource/updateResource écrivent
+							// dynamiquement toute clé du JSON reçu comme colonne SQL, il faut donc
+							// l'extraire avant l'appel, puis l'associer une fois l'id connu.
+							final JsonArray equipmentIdsArray = resource.getJsonArray("equipmentIds");
+							resource.remove("equipmentIds");
 							final Handler<Either<String, JsonObject>> handler = notEmptyResponseHandler(request);
-							resourceService.createResource(resource, user, eventHelper.onCreateResource(request, RESOURCE_NAME, handler));
+							resourceService.createResource(resource, user, eventHelper.onCreateResource(request, RESOURCE_NAME, either -> {
+								if (either.isRight() && equipmentIdsArray != null && !equipmentIdsArray.isEmpty()) {
+									long newResourceId = either.right().getValue().getLong("id");
+									List<Long> equipmentIds = new ArrayList<>();
+									for (Object o : equipmentIdsArray) {
+										equipmentIds.add(((Number) o).longValue());
+									}
+									equipmentService.setResourceEquipment(newResourceId, equipmentIds, ignored -> handler.handle(either));
+								} else {
+									handler.handle(either);
+								}
+							}));
 						}
 					});
 				} else {
@@ -174,7 +210,12 @@ public class ResourceController extends ControllerHelper {
 	@Put("/resource/:id")
 	@ApiDoc("Update resource")
 	@ResourceFilter(TypeAndResourceAppendPolicy.class)
-	@SecuredAction(value = "rbs.publish", type = ActionType.RESOURCE)
+	// Droit distinct de "rbs.publish" (valider les réservations) : modifier la fiche d'une
+	// ressource est une responsabilité différente. Renommer uniquement le premier argument du
+	// @SecuredAction (label de regroupement dans le panneau de partage) ne change PAS le nom de
+	// l'action stockée en base (Classe|méthode, cf. TypeAndResourceAppendPolicy) — aucun partage
+	// déjà configuré ne perd de droit, il gagne juste une case à cocher séparée pour l'avenir.
+	@SecuredAction(value = "rbs.resource.manager", type = ActionType.RESOURCE)
 	@Trace(Actions.UPDATE_RESOURCE)
 	public void update(final HttpServerRequest request) {
 		UserUtils.getUserInfos(eb, request, new Handler<UserInfos>() {
@@ -192,6 +233,12 @@ public class ResourceController extends ControllerHelper {
 							long maxDelay = resource.getLong("max_delay", -1L);
 							if(minDelay > -1L && maxDelay > -1L && minDelay >= maxDelay) {
 								badRequest(request, "rbs.resource.bad.request.min_delay.greater.than.max_delay");
+							}
+							// Un local physique (salle, amphithéâtre, gymnase...) est unique : la
+							// "quantité" n'a de sens que pour du matériel mobile. Sécurité côté
+							// serveur en plus du champ désactivé côté IHM (défense en profondeur).
+							if (!resource.getBoolean("is_mobile", false)) {
+								resource.put("quantity", 1);
 							}
 
 							Handler<Either<String, JsonObject>> handler = new Handler<Either<String, JsonObject>>() {

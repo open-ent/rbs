@@ -21,11 +21,14 @@
 			<input class="nine cell" type="text" i18n-placeholder="rbs.resource.edit.name.placeholder" ng-model="editedResource.name" required input-guard/>
 		</div>
 
-		<!-- prevent interacting with checkbox since it is auto set with type of resource -->
+		<!-- rbs.resource a sa propre colonne "validation" (indépendante de resource_type.validation,
+		     migration 011-rbs.sql) : chaque ressource peut avoir son propre réglage, pré-rempli
+		     depuis le type à la création (cf. newResource() dans controller.ts) mais modifiable
+		     ensuite ici — ce n'était pas le cas avant (checkbox verrouillée en ng-disabled). -->
 		<div class="row">
 			<label class="nine cell right-magnet">
-				<input type="checkbox" data-ng-model="editedResource.validation" ng-disabled="true"/>
-				<span style="cursor: default">
+				<input type="checkbox" data-ng-model="editedResource.validation" input-guard/>
+				<span>
 					<i18n>type.form.validation.required</i18n>
 				</span>
 			</label>
@@ -80,8 +83,99 @@
 		<hr/>
 		<div class="row">
 			<label class="three cell"><i18n>rbs.resource.edit.quantity.label</i18n></label>
-			<input class="input-size" type="number" min="0" ng-model="editedResource.quantity"
+			<input class="input-size" type="number" min="1" ng-model="editedResource.quantity"
+				   ng-disabled="!editedResource.is_mobile"
 				   ng-change="syncBookingsUsingResource(editedResource)"/>
+		</div>
+		<div class="row">
+			<label class="three cell"></label>
+			<div class="nine cell" style="font-style: italic; color: #767676;">
+				<i18n>rbs.resource.edit.quantity.hint</i18n>
+			</div>
+		</div>
+
+		<!-- Mobile : détermine si "capacité" et "équipements" (pertinents pour une salle
+		     uniquement) sont proposés — un ordinateur portable ou un vidéoprojecteur mobile n'a
+		     ni capacité d'accueil ni sa propre liste d'équipements, la "quantité" ci-dessus suffit
+		     déjà à compter les exemplaires identiques. -->
+		<div class="row">
+			<label class="three cell"></label>
+			<div class="nine cell">
+				<input type="checkbox" id="is-mobile" ng-model="editedResource.is_mobile"
+					   ng-change="onIsMobileChanged()" input-guard/>
+				<label for="is-mobile"><i18n>rbs.resource.edit.is_mobile.label</i18n></label>
+				<div style="font-style: italic; color: #767676;"><i18n>rbs.resource.edit.is_mobile.hint</i18n></div>
+			</div>
+		</div>
+		<div class="row">
+			<label class="three cell"></label>
+			<div class="nine cell">
+				<input type="checkbox" id="requires-key" ng-model="editedResource.requires_key" input-guard/>
+				<label for="requires-key"><i18n>rbs.resource.edit.requires_key.label</i18n></label>
+				<div style="font-style: italic; color: #767676;"><i18n>rbs.resource.edit.requires_key.hint</i18n></div>
+			</div>
+		</div>
+
+		<!-- Capacity (salle uniquement) -->
+		<div class="row" ng-if="!editedResource.is_mobile">
+			<label class="three cell"><i18n>rbs.resource.edit.capacity.label</i18n></label>
+			<input class="input-size" type="number" min="0" ng-model="editedResource.capacity"/>
+		</div>
+		<div class="row" ng-if="!editedResource.is_mobile">
+			<label class="three cell"></label>
+			<div class="nine cell" style="font-style: italic; color: #767676;">
+				<i18n>rbs.resource.edit.capacity.hint</i18n>
+			</div>
+		</div>
+
+		<!-- Equipment (salle uniquement) : sélectionnable dès la création (associé à
+		     l'enregistrement, cf. Resource.prototype.toJSON), pas seulement après un premier save. -->
+		<div class="row" ng-if="!editedResource.is_mobile">
+			<label class="three cell"><i18n>rbs.resource.edit.equipment.label</i18n></label>
+			<div class="nine cell">
+				<div style="font-style: italic; color: #767676; margin-bottom: 8px;">
+					<i18n>rbs.resource.edit.equipment.hint</i18n>
+				</div>
+				<select id="select-equipment" ng-model="equipmentPicker.selectedId" ng-change="addEquipment()">
+					<option value="" selected><i18n>rbs.resource.edit.equipment.choose</i18n></option>
+					<option ng-repeat="e in equipmentCatalog" value="[[e.id]]">[[e.name]]</option>
+				</select>
+				<div class="select-blocks remove-margin-bottom">
+					<div ng-repeat="e in editedResource.equipment track by e.id" ng-click="removeEquipment(e.id)">[[e.name]]</div>
+				</div>
+				<div class="top-spacing-three">
+					<div><i18n>rbs.resource.edit.equipment.new.label</i18n></div>
+					<input type="text" ng-model="newEquipmentName" i18n-placeholder="rbs.resource.edit.equipment.new.placeholder"/>
+					<button type="button" ng-click="createAndAddEquipment()" ng-disabled="!newEquipmentName">
+						<i18n>rbs.resource.edit.equipment.new.add</i18n>
+					</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- Affectation (matériel mobile uniquement) : uniquement disponible après le premier
+		     enregistrement (resourceId requis, cf. loadAssignments/saveAssignments). Purement
+		     informatif, n'impacte jamais les réservations — cf. mémoire
+		     rbs-affectation-materiel-mobile-salle. -->
+		<div class="row" ng-if="editedResource.is_mobile">
+			<label class="three cell"><i18n>rbs.resource.edit.assignment.label</i18n></label>
+			<div class="nine cell">
+				<div style="font-style: italic; color: #767676; margin-bottom: 8px;">
+					<i18n>rbs.resource.edit.assignment.hint</i18n>
+				</div>
+				<div ng-if="!editedResource.id" style="font-style: italic; color: #767676;">
+					<i18n>rbs.resource.edit.assignment.blocked.new</i18n>
+				</div>
+				<div ng-if="editedResource.id">
+					<select id="select-assignment" ng-model="assignmentPicker.selectedId" ng-change="addAssignment()">
+						<option value="" selected><i18n>rbs.resource.edit.assignment.choose</i18n></option>
+						<option ng-repeat="r in assignmentCandidates" value="[[r.id]]">[[r.name]]</option>
+					</select>
+					<div class="select-blocks remove-margin-bottom">
+						<div ng-repeat="r in currentAssignments track by r.id" ng-click="removeAssignment(r.id)">[[r.name]]</div>
+					</div>
+				</div>
+			</div>
 		</div>
 
 		<div class="warning default-fontsize top-spacing-three" ng-if="bookingsConflictingResource.length > 0">

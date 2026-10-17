@@ -119,6 +119,21 @@ public class BookingController extends ControllerHelper {
 		bookingNotificationService = new BookingNotificationService(BookingController.log, eb, notification, bookingService);
 	}
 
+	/**
+	 * Droit purement déclaratif (aucune logique métier propre) : partager cette action à un
+	 * utilisateur/groupe lui permet de voir ses propres réservations sur cette ressource
+	 * directement validées, sans passer par la modération — cf. appendCanValidateCondition
+	 * dans BookingServiceSqlImpl, qui reconnaît ce même nom d'action. Le simple fait d'atteindre
+	 * ce handler prouve déjà le droit (bloqué en amont par TypeAndResourceAppendPolicy sinon).
+	 */
+	@Get("/resource/:id/booking/can-auto-validate")
+	@ApiDoc("Check if current user's own bookings on this resource are automatically validated without moderation")
+	@SecuredAction(value = "rbs.booking.publish", type = ActionType.RESOURCE)
+	@ResourceFilter(TypeAndResourceAppendPolicy.class)
+	public void canAutoValidate(final HttpServerRequest request) {
+		renderJson(request, new JsonObject().put("canAutoValidate", true));
+	}
+
 	@Post("/resource/:id/booking")
 	@ApiDoc("Create booking of a given resource")
 	@SecuredAction(value = "rbs.contrib", type = ActionType.RESOURCE)
@@ -192,9 +207,38 @@ public class BookingController extends ControllerHelper {
 	private Handler<Either<String, JsonArray>> getBookingCreationResponse(UserInfos user, HttpServerRequest request, boolean isCreation) {
 		return event -> {
 			if (event.isRight()) {
-				if (event.right().getValue() != null && event.right().getValue().size() > 0) {
+				// Le service place toujours les créations en tête du tableau (cf.
+				// BookingServiceSqlImpl::createBooking) — si le tout premier élément est un
+				// REFUSED, c'est qu'AUCUNE création n'a réussi (seuls des refus automatiques de
+				// réservations concurrentes ont eu lieu, ce qui ne devrait jamais arriver seul :
+				// on ne veut jamais renvoyer un 200 avec la réservation refusée d'un tiers comme
+				// payload). Traiter ce cas comme un conflit, au même titre qu'un tableau vide.
+				boolean hasRealCreation = event.right().getValue() != null && event.right().getValue().size() > 0
+						&& REFUSED.status() != event.right().getValue().getJsonObject(0).getInteger("status", 0);
+				if (hasRealCreation) {
 					List<JsonObject> bookings = event.right().getValue().stream().map(JsonObject.class::cast).collect(Collectors.toList());
-					bookings.forEach(booking -> notifyBookingCreatedOrUpdated(request, user, booking, isCreation));
+					bookings.forEach(booking -> {
+						final String bookingId = Long.toString(booking.getLong("id", 0L));
+						// Mécanisme de priorité (cf. BookingServiceSqlImpl::getRefuseConcurrentCreatedBookings) :
+						// une demande concurrente encore en attente a pu être refusée automatiquement par
+						// cette même création — notifier son propriétaire avec le même template qu'un refus
+						// manuel (processBooking), pas comme si SA réservation venait d'être créée.
+						if (REFUSED.status() == booking.getInteger("status", 0)) {
+							bookingService.getResourceName(bookingId, resEvent -> {
+								if (resEvent.isRight() && resEvent.right().getValue() != null) {
+									notifyBookingProcessed(request, user, booking, resEvent.right().getValue().getString("resource_name"));
+								}
+							});
+							return;
+						}
+						notifyBookingCreatedOrUpdated(request, user, booking, isCreation);
+						bookingService.getResourceName(bookingId, resEvent -> {
+							if (resEvent.isRight() && resEvent.right().getValue() != null) {
+								notifyStructureCalendarIfValidated(booking, resEvent.right().getValue().getString("resource_name"),
+										resEvent.right().getValue().getString("structure_id"), user);
+							}
+						});
+					});
 					renderJson(request, event.right().getValue().getJsonObject(0), 200);
 					eventHelper.onCreateResource(request, RESOURCE_NAME);
 				} else {
@@ -277,6 +321,45 @@ public class BookingController extends ControllerHelper {
 			});
 		}
 
+	}
+
+	/**
+	 * Fait apparaître une réservation validée dans l'agenda d'établissement (module calendar),
+	 * sur le même canal event-bus que celui déjà utilisé dans l'autre sens (calendar -> RBS via
+	 * RbsHelper/EventBusController) — pas de nouveau mécanisme, juste le symétrique. Dégradation
+	 * silencieuse si l'établissement n'a pas d'agenda de structure : ce n'est pas bloquant pour la
+	 * réservation elle-même.
+	 *
+	 * Titre = motif de la réservation (booking_reason, ex. "Cours de Maths") quand il est
+	 * renseigné, sinon le nom de la ressource ; lieu = toujours le nom de la ressource. Avant ce
+	 * correctif, le titre portait systématiquement le nom de la ressource et le lieu restait
+	 * vide — incohérent (constaté sur l'ENT local, le motif réel de la réservation disparaissait).
+	 */
+	private void notifyStructureCalendarIfValidated(final JsonObject booking, final String resourceName, final String structureId,
+			final UserInfos user) {
+		final int status = booking.getInteger("status", 0);
+		if (status != VALIDATED.status() || structureId == null || structureId.trim().isEmpty()) {
+			return;
+		}
+		final String startDate = booking.getString("start_date", null);
+		final String endDate = booking.getString("end_date", null);
+		if (startDate == null || endDate == null) {
+			return;
+		}
+		final String reason = booking.getString("booking_reason");
+		final String title = (reason != null && !reason.trim().isEmpty())
+				? reason
+				: (resourceName != null ? resourceName : "Réservation");
+		JsonObject action = new JsonObject()
+				.put("action", "create-event-from-booking")
+				.put("structureId", structureId)
+				.put("title", title)
+				.put("location", resourceName)
+				.put("startDate", startDate)
+				.put("endDate", endDate)
+				.put("bookingId", booking.getLong("id", 0L))
+				.put("userId", user.getUserId());
+		eb.send("net.atos.entng.calendar", action);
 	}
 
 	@Post("/resource/:id/booking/periodic")
@@ -592,7 +675,13 @@ public class BookingController extends ControllerHelper {
 
 	@Put("/resource/:id/booking/:bookingId")
 	@ApiDoc("Update booking")
-	@SecuredAction(value = "rbs.contrib", type = ActionType.RESOURCE)
+	// Le label "rbs.contrib" (Réserver) n'a jamais réellement compté pour AUTORISER la
+	// modification de la réservation D'UN AUTRE (TypeAndResourceAppendPolicy ignorait ce label et
+	// ne vérifiait que le partage de processBooking, ou l'ownership) — le renommer vers
+	// "rbs.booking.manager" ne change donc aucun comportement existant. Le propriétaire garde
+	// toujours le droit de modifier SA PROPRE réservation (clause dédiée dans le filtre), quel
+	// que soit ce partage.
+	@SecuredAction(value = "rbs.booking.manager", type = ActionType.RESOURCE)
 	@ResourceFilter(TypeAndResourceAppendPolicy.class)
 	@Trace(Actions.UPDATE_BOOKING)
 	public void updateBooking(final HttpServerRequest request) {
@@ -609,7 +698,8 @@ public class BookingController extends ControllerHelper {
 
 	@Put("/resource/:id/booking/:bookingId/periodic")
 	@ApiDoc("Update periodic booking")
-	@SecuredAction(value = "rbs.contrib", type = ActionType.RESOURCE)
+	// Cf. commentaire sur updateBooking : renommage sans impact sur les partages existants.
+	@SecuredAction(value = "rbs.booking.manager", type = ActionType.RESOURCE)
 	@ResourceFilter(TypeAndResourceAppendPolicy.class)
 	@Trace(Actions.UPDATE_PERIODIC_BOOKING)
 	public void updatePeriodicBooking(final HttpServerRequest request) {
@@ -663,14 +753,17 @@ public class BookingController extends ControllerHelper {
 												&& notifyEvent.right().getValue().size() > 0) {
 
 											final String resourceName = notifyEvent.right().getValue().getString("resource_name");
+											final String structureId = notifyEvent.right().getValue().getString("structure_id");
 
 											notifyBookingProcessed(request, user, processedBooking, resourceName);
+											notifyStructureCalendarIfValidated(processedBooking, resourceName, structureId, user);
 
 											if (results.size() >= 4) {
 												JsonArray concurrentBookings = results.getJsonArray(3);
 												for (Object o : concurrentBookings) {
 													JsonObject booking = (JsonObject) o;
 													notifyBookingProcessed(request, user, booking, resourceName);
+													notifyStructureCalendarIfValidated(booking, resourceName, structureId, user);
 												}
 											}
 
@@ -751,7 +844,11 @@ public class BookingController extends ControllerHelper {
 
 	@Delete("/resource/:id/booking/:bookingId/:booleanThisAndAfter")
 	@ApiDoc("Delete booking")
-	@SecuredAction(value = "rbs.manager", type = ActionType.RESOURCE)
+	// Regroupé avec updateBooking/updatePeriodicBooking sous "rbs.booking.manager" (annuler et
+	// modifier la réservation d'un tiers sont la même responsabilité) plutôt que "rbs.manager"
+	// (administration complète de la ressource). Le propriétaire garde toujours le droit de
+	// supprimer SA PROPRE réservation (clause dédiée dans TypeAndResourceAppendPolicy).
+	@SecuredAction(value = "rbs.booking.manager", type = ActionType.RESOURCE)
 	@ResourceFilter(TypeAndResourceAppendPolicy.class)
 	@Trace(Actions.DELETE_BOOKING)
 	public void deleteBooking(final HttpServerRequest request) {
@@ -1009,18 +1106,47 @@ public class BookingController extends ControllerHelper {
 	}
 
 	@Get("/resource/:id/bookings")
-	@ApiDoc("List all bookings for a given resource")
+	@ApiDoc("List all bookings for a given resource, optionally restricted to a period via ?startAt=&endAt= (ISO datetime)")
 	@SecuredAction(value = "rbs.read", type = ActionType.RESOURCE)
 	@ResourceFilter(TypeAndResourceAppendPolicy.class)
 	public void listBookingsByResource(final HttpServerRequest request) {
 		UserUtils.getUserInfos(eb, request, user -> {
 			if (user != null) {
 				String resourceId = request.params().get("id");
-				bookingService.listBookingsByResource(resourceId, arrayResponseHandler(request));
+				// Query params optionnels : sans eux, comportement inchangé (tout l'historique de
+				// la ressource) — utilisés par la vue de disponibilité (agrégation EDT+RBS,
+				// cf. CourseController::getRoomConflicts côté EDT) pour ne charger qu'une période
+				// donnée (ex. la semaine affichée) plutôt que tout l'historique de la ressource.
+				String startAt = request.params().get("startAt");
+				String endAt = request.params().get("endAt");
+				bookingService.listBookingsByResource(resourceId, startAt, endAt, arrayResponseHandler(request));
 			} else {
 				log.debug("User not found in session.");
 				unauthorized(request);
 			}
+		});
+	}
+
+	// Pas de @ResourceFilter(TypeAndResourceAppendPolicy.class) contrairement à
+	// listBookingsByResource ci-dessus : symétrique de CourseController::getRoomConflicts côté
+	// module edt (consommé dans l'autre sens par RBS, cf. checkEdtRoomConflict) — un simple
+	// avertissement non bloquant de disponibilité, pas une consultation de contenu RBS protégé,
+	// donc pas soumis au droit de partage individuel sur la ressource (un enseignant qui saisit un
+	// cours EDT à la main n'a en général aucun partage RBS direct sur la salle).
+	@Get("/resource/:id/booking-conflicts/:startAt/:endAt")
+	@ApiDoc("Réservations RBS d'une ressource sur une période — vérification de disponibilité avant saisie manuelle d'un cours EDT, sans exiger de droit RBS individuel sur la ressource.")
+	@SecuredAction(value = "rbs.read", type = ActionType.AUTHENTICATED)
+	public void getResourceBookingConflicts(final HttpServerRequest request) {
+		UserUtils.getUserInfos(eb, request, user -> {
+			if (user == null) {
+				log.debug("User not found in session.");
+				unauthorized(request);
+				return;
+			}
+			String resourceId = request.params().get("id");
+			String startAt = request.params().get("startAt");
+			String endAt = request.params().get("endAt");
+			bookingService.listBookingsByResource(resourceId, startAt, endAt, arrayResponseHandler(request));
 		});
 	}
 

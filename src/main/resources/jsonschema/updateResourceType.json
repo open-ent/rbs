@@ -20,6 +20,11 @@
     },
     "slotprofile": {
       "type": "string"
+    },
+    "category": {
+      "description": "Catégorie fonctionnelle de salle, pour le matching salle/matière (school-planner, EDT). Texte libre : quelques catégories usuelles sont suggérées côté IHM, mais un établissement peut en créer de nouvelles.",
+      "type": "string",
+      "maxLength": 40
     }
   },
   "required": [

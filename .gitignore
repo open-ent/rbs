@@ -48,3 +48,4 @@ rev-manifest.json
 target
 dependency-reduced-pom.xml
 edifice
+package-lock.json

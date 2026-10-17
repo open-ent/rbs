@@ -1,4 +1,5 @@
 import {_, ng, moment, notify, idiom as lang} from 'entcore';
+import http from 'axios';
 import {ROOTS} from "../../core/const/roots.const";
 import {RBS} from "../../models/models";
 import {DateUtils} from "../../utilities/date.util";
@@ -19,6 +20,13 @@ interface IViewModel {
     editedBooking: any;
     displayLightbox: boolean;
     selectedStructure: any;
+
+    edtRoomConflictWarning: string;
+    checkEdtRoomConflict(): Promise<void>;
+
+    miniRoomSchedule: any;
+    toggleMiniRoomSchedule(): void;
+    loadMiniRoomSchedule(): Promise<void>;
 
     slotProfilesComponent: any;
     selectedSlotStart: any;
@@ -137,6 +145,136 @@ export const bookingForm = ng.directive('bookingForm', ['BookingEventService', '
                         await vm.editBooking();
                         break;
                 }
+                $scope.$watchGroup([
+                    () => vm.editedBooking && vm.editedBooking.resource && vm.editedBooking.resource.name,
+                    () => vm.editedBooking && vm.editedBooking.startMoment && vm.editedBooking.startMoment.valueOf(),
+                    () => vm.editedBooking && vm.editedBooking.endMoment && vm.editedBooking.endMoment.valueOf()
+                ], vm.checkEdtRoomConflict);
+
+                // Quand "Il n'y a plus de ressource disponible pour ce créneau" s'affiche, le
+                // champ Quantité est désactivé (cf template) mais gardait sa dernière valeur
+                // saisie, contradictoire avec min="1" alors que 0 place est disponible :
+                // on la force à 0 tant que la situation reste bloquante.
+                $scope.$watch(
+                    () => vm.editedBooking && vm.isBookingQuantityWrong(vm.editedBooking),
+                    (wrong: boolean) => {
+                        if (wrong && vm.editedBooking) {
+                            vm.editedBooking.quantity = 0;
+                        }
+                    }
+                );
+            };
+
+            // Avertissement non bloquant (pas de filtre par salle natif côté EDT — relais serveur
+            // qui récupère les cours de la structure sur la période puis filtre par roomLabels) :
+            // corrélation par nom exact entre la ressource RBS et roomLabels EDT, aucune garantie
+            // qu'ils coïncident si les libellés diffèrent — silence total dans ce cas, jamais
+            // bloquant pour la réservation.
+            vm.edtRoomConflictWarning = '';
+            vm.checkEdtRoomConflict = async (): Promise<void> => {
+                vm.edtRoomConflictWarning = '';
+                const booking: any = vm.editedBooking;
+                const structureId: string = vm.selectedStructure && vm.selectedStructure.id;
+                const roomName: string = booking && booking.resource && booking.resource.name;
+                if (!structureId || !roomName || !booking.startMoment || !booking.endMoment) {
+                    return;
+                }
+                const start: string = booking.startMoment.format('YYYY-MM-DDTHH:mm:ss');
+                const end: string = booking.endMoment.format('YYYY-MM-DDTHH:mm:ss');
+                try {
+                    const {data}: any = await http.get(
+                        `/edt/structures/${structureId}/room-conflicts/${start}/${end}`,
+                        {params: {room: roomName}}
+                    );
+                    if (data && data.length > 0) {
+                        vm.edtRoomConflictWarning = lang.translate('rbs.edt.room.conflict.warning').replace('{{room}}', roomName);
+                    }
+                } catch (e) {
+                    vm.edtRoomConflictWarning = '';
+                }
+                if (vm.miniRoomSchedule.expanded) {
+                    await vm.loadMiniRoomSchedule();
+                }
+                $scope.$applyAsync();
+            };
+
+            // Mini-vue "Disponibilité" repliée par défaut, sous l'avertissement de conflit EDT
+            // ci-dessus : mêmes sources agrégées (EDT + RBS) que l'onglet dédié du menu
+            // principal (resource/room-schedule.html), mais sur la semaine du créneau en cours de
+            // saisie plutôt qu'une semaine navigable — seulement pour donner du contexte pendant
+            // la création, pas pour remplacer l'onglet de consultation complet.
+            vm.miniRoomSchedule = {
+                expanded: false,
+                loading: false,
+                slots: [],
+            };
+
+            vm.toggleMiniRoomSchedule = (): void => {
+                vm.miniRoomSchedule.expanded = !vm.miniRoomSchedule.expanded;
+                if (vm.miniRoomSchedule.expanded) {
+                    vm.loadMiniRoomSchedule();
+                }
+            };
+
+            vm.loadMiniRoomSchedule = async (): Promise<void> => {
+                const booking: any = vm.editedBooking;
+                const structureId: string = vm.selectedStructure && vm.selectedStructure.id;
+                const resourceId: any = booking && booking.resource && booking.resource.id;
+                const roomName: string = booking && booking.resource && booking.resource.name;
+                vm.miniRoomSchedule.slots = [];
+                if (!structureId || !roomName || !booking.startMoment) {
+                    return;
+                }
+                vm.miniRoomSchedule.loading = true;
+                const weekStart = moment(booking.startMoment).startOf('week');
+                const weekEnd = weekStart.clone().add(7, 'days');
+                const startIso = weekStart.format('YYYY-MM-DDTHH:mm:ss');
+                const endIso = weekEnd.format('YYYY-MM-DDTHH:mm:ss');
+                const slots: any[] = [];
+
+                try {
+                    const {data: courses}: any = await http.get(
+                        `/edt/structures/${structureId}/room-conflicts/${startIso}/${endIso}`,
+                        {params: {room: roomName}}
+                    );
+                    (courses || []).forEach(function (course: any) {
+                        slots.push({
+                            source: 'edt',
+                            start: moment(course.startDate, 'YYYY-MM-DD HH:mm:ss'),
+                            end: moment(course.endDate, 'YYYY-MM-DD HH:mm:ss'),
+                            label: lang.translate('rbs.roomSchedule.source.edt'),
+                        });
+                    });
+                } catch (e) {
+                    // Avertissement non bloquant, même logique que checkEdtRoomConflict.
+                }
+
+                if (resourceId) {
+                    try {
+                        const {data: bookings}: any = await http.get(
+                            `/rbs/resource/${resourceId}/bookings`,
+                            {params: {startAt: startIso, endAt: endIso}}
+                        );
+                        (bookings || []).forEach(function (b: any) {
+                            if (b.status === 3 /* REFUSED */) {
+                                return;
+                            }
+                            slots.push({
+                                source: 'rbs',
+                                start: moment(b.start_date),
+                                end: moment(b.end_date),
+                                label: b.booking_reason || lang.translate('rbs.roomSchedule.source.rbs'),
+                            });
+                        });
+                    } catch (e) {
+                        // idem : ne jamais bloquer le formulaire sur un souci de lecture RBS.
+                    }
+                }
+
+                slots.sort(function (a, b) { return a.start.valueOf() - b.start.valueOf(); });
+                vm.miniRoomSchedule.slots = slots;
+                vm.miniRoomSchedule.loading = false;
+                $scope.$applyAsync();
             };
 
             // New booking
@@ -166,7 +304,12 @@ export const bookingForm = ng.directive('bookingForm', ['BookingEventService', '
                 vm.initBookingDates(vm.editedBooking.startMoment, vm.editedBooking.endMoment);
 
                 // vm.display.showPanel = true;
-                $scope.$apply();
+                // $applyAsync (pas $apply) : cette fonction est appelée depuis $onInit, dans une
+                // chaîne async/await qui enchaîne plusieurs digests imbriqués (autoSelectType
+                // AndResource -> autoSelectResource) — un $apply synchrone ici peut retomber
+                // pendant qu'un digest précédent tourne encore ("$digest already in progress"),
+                // notamment quand autoSelectTypeAndResource se termine tôt (aucune ressource).
+                $scope.$applyAsync();
             };
 
             vm.newBookingCalendar = async (): Promise<void> => {
@@ -204,7 +347,7 @@ export const bookingForm = ng.directive('bookingForm', ['BookingEventService', '
                 vm.bookings.syncForShowList();
                 vm.initBookingDates(vm.editedBooking.startMoment, vm.editedBooking.endMoment);
                 vm.displayLightbox = true;
-                $scope.$apply();
+                $scope.$applyAsync();
             };
 
             // Init a new booking
@@ -222,7 +365,7 @@ export const bookingForm = ng.directive('bookingForm', ['BookingEventService', '
                 if (vm.resourceTypes.first() === undefined || vm.resourceTypes.first().moderators === undefined) {
                     vm.resourceTypes.forEach(function (resourceType) {
                         resourceType.getModerators(function () {
-                            $scope.$apply('resourceTypes');
+                            $scope.$applyAsync();
                         });
                     });
                 }
@@ -233,21 +376,22 @@ export const bookingForm = ng.directive('bookingForm', ['BookingEventService', '
                 vm.editedBooking.resource = undefined;
                 vm.selectedSlotStart = undefined;
                 vm.selectedSlotEnd = undefined;
+                // Pas de notify.error ici dans les deux cas ci-dessous (aucun type avec
+                // ressource / structure sans type) : vm.editedBooking.type reste undefined,
+                // ce qui affiche déjà l'avertissement persistant du template (rbs.booking.
+                // warning.no.types, "Aucun type de ressources disponible... pour cet
+                // établissement") — un toast temporaire en plus était redondant et, pour le
+                // premier cas, faussement libellé "pour ce type" alors qu'aucun type précis
+                // n'est en cause.
                 let selectedType = undefined;
                 if (vm.selectedStructure.types.length > 0) {
                     selectedType = vm.selectedStructure.types.find(t => !t.resources.isEmpty());
-                    if (!selectedType) {
-                        notify.error(lang.translate('rbs.booking.warning.no.resources'));
-                    }
-                    else {
+                    if (selectedType) {
                         vm.editedBooking.type = selectedType;
                         await vm.autoSelectResource();
                     }
                 }
-                else {
-                    notify.error(lang.translate('rbs.booking.warning.no.types'));
-                }
-                $scope.$apply();
+                $scope.$applyAsync();
             };
 
             vm.autoSelectResource = async (): Promise<void> => {
@@ -278,7 +422,7 @@ export const bookingForm = ng.directive('bookingForm', ['BookingEventService', '
                         else {
                             vm.editedBooking.type.slotprofile = undefined;
                         }
-                        $scope.$apply();
+                        $scope.$applyAsync();
                     });
                 }
                 else if (vm.saveTime) {
@@ -291,7 +435,7 @@ export const bookingForm = ng.directive('bookingForm', ['BookingEventService', '
                     vm.booking.endTime.set('minute', 0);
                 }
                 vm.display.processing = false;
-                $scope.$apply();
+                $scope.$applyAsync();
             };
 
             vm.initBookingDates = (startMoment, endMoment): void => {
@@ -309,9 +453,9 @@ export const bookingForm = ng.directive('bookingForm', ['BookingEventService', '
                 } else {
                     vm.booking.startTime = minTime;
                     if (startMoment.isAfter(maxTime)) {
-                        startMoment.add('day', 1);
-                        endMoment.add('day', 1);
-                        maxTime.add('day', 1);
+                        startMoment.add(1, 'day');
+                        endMoment.add(1, 'day');
+                        maxTime.add(1, 'day');
                     }
                 }
                 if (endMoment.isBefore(maxTime)) {
@@ -407,7 +551,7 @@ export const bookingForm = ng.directive('bookingForm', ['BookingEventService', '
                 await vm.editedBooking.resource.syncResourceAvailabilities();
                 vm.updatePeriodicSummary();
 
-                $scope.$apply();
+                $scope.$applyAsync();
             };
 
             vm.updatePeriodicSummary = (): void => {
@@ -964,6 +1108,16 @@ export const bookingForm = ng.directive('bookingForm', ['BookingEventService', '
             vm.saveBooking = (): void => {
                 // Check
                 vm.currentErrors = [];
+
+                // Garde explicite : le bouton est normalement désactivé (ng-disabled) dans ce cas,
+                // mais rien n'empêchait jusqu'ici cette fonction d'être appelée quand même (ex.
+                // reset-guard, appel programmatique) — silence total côté utilisateur sinon,
+                // aucune réservation créée sans le moindre message.
+                if (vm.isBookingQuantityWrong(vm.editedBooking)) {
+                    notify.error(lang.translate('rbs.booking.edit.quantity.none'));
+                    vm.currentErrors.push({error: 'rbs.booking.edit.quantity.none'});
+                    return;
+                }
 
                 // vm.editedBooking = semanticObject(vm.editedBooking, Booking);
 

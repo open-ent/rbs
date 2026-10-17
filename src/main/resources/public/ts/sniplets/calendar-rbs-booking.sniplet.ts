@@ -1,5 +1,6 @@
 import {BookingService, IBookingService} from "../services";
 import {angular, idiom, model} from "entcore";
+import http from "axios";
 import {Booking, Bookings, IBookingResponse} from "../models/booking.model";
 import {Resource} from "../models/resource.model";
 import {ResourceType, Structure} from "../models/resource-type.model";
@@ -119,6 +120,20 @@ interface IViewModel {
     isOneDayEvent(calendarEvent: CalendarEvent): boolean;
 
     isBookingPossible(excludeBookingFormInfos?: boolean): boolean;
+
+    edtRoomConflictWarning: string;
+    checkEdtRoomConflict(): Promise<void>;
+
+    bookingProposals: Array<any>;
+    refusalReasons: { [proposalId: string]: string };
+    processingProposalId: string;
+    loadBookingProposals(): Promise<void>;
+    isProposalOwner(proposal: any): boolean;
+    canProcessProposal(proposal: any): boolean;
+    acceptProposal(proposal: any): Promise<void>;
+    refuseProposal(proposal: any): Promise<void>;
+    bookingProposalStatusLabel(status: string): string;
+    translate(key: string): string;
 }
 
 class ViewModel implements IViewModel {
@@ -146,6 +161,17 @@ class ViewModel implements IViewModel {
     numberOfTotalItems: number;
     minMaxDelaysCompliant: boolean;
 
+    edtRoomConflictWarning: string;
+
+    // Point B2 (chantier "vue consolidée EDT+RBS") : circuit d'approbation d'une réservation RBS
+    // proposée sur un agenda partagé n'appartenant pas à l'auteur (cf. BookingProposalController,
+    // module calendar). L'auteur ET le propriétaire de l'agenda voient la liste des propositions
+    // liées à cet événement ; seul le propriétaire (model.me.userId === proposal.owner.userId)
+    // voit les boutons Accepter/Refuser, uniquement tant que le statut est PENDING.
+    bookingProposals: Array<any>;
+    refusalReasons: { [proposalId: string]: string };
+    processingProposalId: string;
+
     private bookingService;
 
     constructor(scope, bookingService: IBookingService, source: string) {
@@ -160,6 +186,9 @@ class ViewModel implements IViewModel {
         this.canEditEvent = false;
         this.bookings = new Bookings();
         this.dateFormat = FORMAT;
+        this.bookingProposals = [];
+        this.refusalReasons = {};
+        this.processingProposalId = undefined;
 
         this.editedBooking = new Booking();
         this.editedBooking.opened = true;
@@ -167,8 +196,22 @@ class ViewModel implements IViewModel {
         this.editedBooking.booking_reason = idiom.translate("rbs.calendar.sniplet.booking.reason");
 
         this.setHandler();
+
+        // Avertissement non bloquant (même patron que booking-form.ts, module rbs) : jusqu'ici ce
+        // composant embarqué dans le formulaire d'événement Calendar ne vérifiait que les conflits
+        // avec d'autres réservations RBS (via availableResourceQuantity), jamais les cours de
+        // l'Emploi du temps — une salle occupée par un cours pouvait donc être réservée depuis
+        // n'importe quel agenda (personnel, groupe, établissement) sans aucun avertissement.
+        this.edtRoomConflictWarning = '';
+        this.scope.$watchGroup([
+            () => this.editedBooking && this.editedBooking.resource && this.editedBooking.resource.name,
+            () => this.editedBooking && this.editedBooking.startMoment && this.editedBooking.startMoment.valueOf(),
+            () => this.editedBooking && this.editedBooking.endMoment && this.editedBooking.endMoment.valueOf()
+        ], () => { this.checkEdtRoomConflict(); });
+
         this.loading = false;
     }
+
 
     /**
      * Get calendarEvent change and change form accordingly
@@ -356,6 +399,9 @@ class ViewModel implements IViewModel {
                             });
                     })
                 }
+                if (this.calendarEvent._id) {
+                    this.loadBookingProposals();
+                }
                 this.autoSelectStructure();
                 this.editedBooking.quantity = 1;
                 this.loading = false;
@@ -373,9 +419,74 @@ class ViewModel implements IViewModel {
                 this.canViewBooking = false;
                 this.canEditEvent = false;
                 this.bookings.all = [];
+                this.bookingProposals = [];
                 safeApply(this.scope);
 
                 break;
+        }
+    }
+
+    /**
+     * Charge les propositions de réservation (PENDING/ACCEPTED/REFUSED) liées à cet événement
+     * — hors scope RBS (droit rbs.view), l'auteur ET le propriétaire de l'agenda partagé y ont
+     * accès sans droit RBS particulier (cf. BookingProposalController, ActionType.AUTHENTICATED).
+     */
+    async loadBookingProposals(): Promise<void> {
+        try {
+            const {data} = await http.get(`/calendar/booking-proposal/by-event/${this.calendarEvent._id}`);
+            this.bookingProposals = data || [];
+        } catch (e) {
+            this.bookingProposals = [];
+        }
+        safeApply(this.scope);
+    }
+
+    /** Le propriétaire de l'agenda visé par la proposition — jamais un droit RBS. */
+    isProposalOwner(proposal: any): boolean {
+        return !!(proposal && proposal.owner && model.me.userId === proposal.owner.userId);
+    }
+
+    canProcessProposal(proposal: any): boolean {
+        return this.isProposalOwner(proposal) && proposal.status === 'PENDING';
+    }
+
+    async acceptProposal(proposal: any): Promise<void> {
+        this.processingProposalId = proposal._id;
+        try {
+            await http.put(`/calendar/booking-proposal/${proposal._id}/process`, {status: 'ACCEPTED'});
+            await this.loadBookingProposals();
+        } catch (e) {
+            console.error(e);
+        }
+        this.processingProposalId = undefined;
+        safeApply(this.scope);
+    }
+
+    async refuseProposal(proposal: any): Promise<void> {
+        this.processingProposalId = proposal._id;
+        try {
+            await http.put(`/calendar/booking-proposal/${proposal._id}/process`, {
+                status: 'REFUSED',
+                refusalReason: this.refusalReasons[proposal._id] || undefined,
+            });
+            await this.loadBookingProposals();
+        } catch (e) {
+            console.error(e);
+        }
+        this.processingProposalId = undefined;
+        safeApply(this.scope);
+    }
+
+    translate(key: string): string {
+        return idiom.translate(key);
+    }
+
+    bookingProposalStatusLabel(status: string): string {
+        switch (status) {
+            case 'PENDING': return idiom.translate('rbs.calendar.booking.proposal.status.pending');
+            case 'ACCEPTED': return idiom.translate('rbs.calendar.booking.proposal.status.accepted');
+            case 'REFUSED': return idiom.translate('rbs.calendar.booking.proposal.status.refused');
+            default: return status;
         }
     }
 
@@ -608,6 +719,36 @@ class ViewModel implements IViewModel {
      */
     getRightList(resource: Resource): Availability[] {
         return AvailabilityUtil.getRightList(resource);
+    }
+
+    /**
+     * Avertissement non bloquant (même patron que booking-form.ts, module rbs) : une salle déjà
+     * occupée par un cours de l'Emploi du temps sur ce créneau n'empêche jamais la réservation
+     * (corrélation par nom exact entre la ressource RBS et les roomLabels EDT — aucune garantie
+     * qu'ils coïncident si les libellés diffèrent, silence total dans ce cas).
+     */
+    async checkEdtRoomConflict(): Promise<void> {
+        this.edtRoomConflictWarning = '';
+        const booking = this.editedBooking;
+        const structureId: string = booking && booking.structure && booking.structure.id;
+        const roomName: string = booking && booking.resource && booking.resource.name;
+        if (!structureId || !roomName || !booking.startMoment || !booking.endMoment) {
+            return;
+        }
+        const start: string = booking.startMoment.format('YYYY-MM-DDTHH:mm:ss');
+        const end: string = booking.endMoment.format('YYYY-MM-DDTHH:mm:ss');
+        try {
+            const {data}: any = await http.get(
+                `/edt/structures/${structureId}/room-conflicts/${start}/${end}`,
+                {params: {room: roomName}}
+            );
+            if (data && data.length > 0) {
+                this.edtRoomConflictWarning = idiom.translate('rbs.edt.room.conflict.warning').replace('{{room}}', roomName);
+            }
+        } catch (e) {
+            this.edtRoomConflictWarning = '';
+        }
+        safeApply(this.scope);
     }
 
     /**

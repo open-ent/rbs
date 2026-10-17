@@ -1,4 +1,5 @@
 import {_, Behaviours, idiom as lang, ng, notify, template} from 'entcore';
+import http from 'axios';
 import moment from '../moment';
 import {isBookingSlot, RBS} from '../models/models';
 import {BookingUtil} from "../utilities/booking.util";
@@ -38,6 +39,24 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
                     );
                 }
                 $scope.showCalendar(false);
+            },
+            // Lien direct depuis school-planner (bouton "Sécuriser les salles dans RBS maintenant"
+            // après un transfert vers l'Emploi du temps) : ouvre le mode gestion puis l'écran
+            // d'import EDT directement, sur la structure demandée si fournie.
+            openEdtImportFromRoute: function (param) {
+                $scope.showManage();
+                $timeout(function () {
+                    if (param && param.structureId) {
+                        var match = _.filter($scope.structuresWithTypes, function (s) {
+                            return s.id === param.structureId;
+                        })[0];
+                        if (match) {
+                            $scope.setSelectedStructureForCreation(match);
+                        }
+                    }
+                    $scope.openEdtImport();
+                    $scope.safeApply();
+                }, 300);
             }
         });
 
@@ -134,7 +153,7 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
                 STATE_PARTIAL: model.STATE_PARTIAL,
             };
             $scope.today = moment().startOf('day');
-            $scope.tomorrow = moment().add('day', 1).startOf('day');
+            $scope.tomorrow = moment().add(1, 'day').startOf('day');
 
             $scope.booking = new Booking();
             $scope.initBookingDates(moment(), moment());
@@ -177,7 +196,7 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
             //fixme Why started with today date ....
             model.bookings.filters.startMoment = moment().startOf('day');
             //fixme Why two month ?
-            model.bookings.filters.endMoment = moment().add('month', 2).startOf('day');
+            model.bookings.filters.endMoment = moment().add(2, 'month').startOf('day');
             model.bookings.filters.startDate = model.bookings.filters.startMoment.toDate();
             model.bookings.filters.endDate = model.bookings.filters.endMoment.toDate();
 
@@ -265,7 +284,12 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
         };
 
         $scope.hasAnyBookingRight = function (booking) {
-            return booking.resource.myRights.process || booking.resource.myRights.manage || booking.owner === model.me.userId;
+            // L'auteur peut toujours agir sur sa réservation : on teste le propriétaire EN PREMIER,
+            // avant myRights qui peut être absent/vide sur une ressource où l'utilisateur n'a que
+            // « Réserver » (sinon l'accès à .process levait une erreur -> ng-if faux -> pas de case).
+            return booking.owner === model.me.userId
+                || (booking.resource && booking.resource.myRights
+                    && (booking.resource.myRights.process || booking.resource.myRights.manage));
         }
 
         // Initialization
@@ -468,6 +492,8 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
                 $scope.initMain();
             }
             $scope.display.admin = false;
+            $scope.display.moderation = false;
+            delete $scope.bookings.filters.unprocessed;
             $scope.display.list = true;
             $scope.bookings.filters.booking = true;
             $scope.bookings.syncForShowList();
@@ -481,6 +507,8 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
                 $scope.initMain();
             }
             $scope.display.admin = false;
+            $scope.display.moderation = false;
+            delete $scope.bookings.filters.unprocessed;
             $scope.display.list = false;
             $scope.bookings.filters.booking = undefined;
             $scope.bookings.applyFilters();
@@ -489,9 +517,208 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
             $scope.safeApply();
         };
 
+        // Onglet "Disponibilité" : consulter les créneaux déjà occupés par l'Emploi du temps ET
+        // les réservations RBS sur une salle donnée, sans passer par le formulaire de réservation
+        // (écart #1 du scénario BFC 1.3 vs Pronote — "voir ce qui est déjà pris avant de
+        // demander"). Combine l'endpoint EDT existant (déjà utilisé côté formulaire pour un
+        // avertissement ponctuel, cf. checkEdtRoomConflict) avec le nouveau filtre par période de
+        // GET /rbs/resource/:id/bookings — mais ici sur toute une semaine, pas un seul créneau.
+        $scope.roomSchedule = {
+            types: [],
+            resources: [],
+            selectedType: null,
+            // Sélection : soit une ressource précise (objet), soit 'ALL' (toutes les ressources
+            // du type sélectionné, regroupées avec une colonne Ressource dans le tableau).
+            selectedResource: null,
+            weekStart: moment().startOf('week'),
+            pickedDate: new Date(),
+            // 'week' (navigation précédente/suivante) ou 'day' (date choisie directement) : la
+            // vue et le message "aucun créneau" s'adaptent à la granularité demandée.
+            mode: 'week',
+            slots: [],
+            loading: false,
+        };
+
+        $scope.showRoomSchedule = function () {
+            $scope.display.admin = false;
+            $scope.display.moderation = false;
+            delete $scope.bookings.filters.unprocessed;
+            $scope.display.list = undefined;
+            $scope.display.roomSchedule = true;
+            if ($scope.roomSchedule.resources.length === 0) {
+                loadRoomScheduleResources();
+            }
+            template.open('bookings', 'resource/room-schedule');
+            $scope.safeApply();
+        };
+
+        async function loadRoomScheduleResources(): Promise<void> {
+            // Appel direct plutôt que model.resourceTypes (dont le sync() n'est déclenché que par
+            // model.refresh(), lui-même appelé seulement en entrant en mode gestion — jamais sur
+            // la vue calendrier par défaut : rester dépendant de ce modèle partagé aurait laissé
+            // le sélecteur vide tant que l'utilisateur n'a jamais ouvert "Gérer les types").
+            try {
+                const [{data: types}, {data: allResources}]: any = await Promise.all([
+                    http.get('/rbs/types'),
+                    http.get('/rbs/resources'),
+                ]);
+                const typeById: {[id: number]: any} = {};
+                (types || []).forEach(function (t: any) { typeById[t.id] = t; });
+                const resources = (allResources || [])
+                    .filter(function (r: any) { return typeById[r.type_id]; })
+                    .map(function (r: any) {
+                        const type = typeById[r.type_id];
+                        return {
+                            id: r.id,
+                            name: r.name,
+                            typeId: type.id,
+                            typeName: type.name,
+                            structureId: type.school_id,
+                        };
+                    });
+                resources.sort(function (a: any, b: any) { return a.name.localeCompare(b.name); });
+                $scope.roomSchedule.resources = resources;
+                // Un type n'apparaît que s'il a au moins une ressource (cohérent avec le filtre
+                // ci-dessus) — permet de choisir "toutes les ressources de ce type" plutôt
+                // qu'une seule, en une fois.
+                const typesWithResources: {[id: number]: {id: number; name: string}} = {};
+                resources.forEach(function (r: any) {
+                    typesWithResources[r.typeId] = {id: r.typeId, name: r.typeName};
+                });
+                $scope.roomSchedule.types = Object.keys(typesWithResources)
+                    .map(function (id) { return typesWithResources[Number(id)]; })
+                    .sort(function (a, b) { return a.name.localeCompare(b.name); });
+                $scope.safeApply();
+            } catch (e) {
+                $scope.roomSchedule.resources = [];
+            }
+        }
+
+        $scope.changeRoomScheduleWeek = function (offsetWeeks: number): void {
+            $scope.roomSchedule.mode = 'week';
+            $scope.roomSchedule.weekStart = $scope.roomSchedule.weekStart.clone().add(offsetWeeks, 'weeks');
+            $scope.roomSchedule.pickedDate = $scope.roomSchedule.weekStart.clone().toDate();
+            $scope.loadRoomSchedule();
+        };
+
+        // Choix direct d'une date : bascule en vue "ce jour" (pas la semaine entière), plus
+        // pertinent pour vérifier une disponibilité ponctuelle qu'une navigation par semaine.
+        $scope.pickRoomScheduleDate = function (): void {
+            $scope.roomSchedule.mode = 'day';
+            $scope.loadRoomSchedule();
+        };
+
+        // Agrégation EDT+RBS pour UNE ressource sur la période donnée — factorisé pour être
+        // appelé soit une fois (ressource précise), soit une fois par ressource du type
+        // sélectionné (mode "toutes les ressources"), auquel cas chaque créneau porte en plus
+        // le nom de la ressource concernée pour les distinguer dans le tableau.
+        async function fetchSlotsForResource(resource: any, startIso: string, endIso: string): Promise<any[]> {
+            const slots: any[] = [];
+
+            try {
+                const {data: courses}: any = await http.get(
+                    `/edt/structures/${resource.structureId}/room-conflicts/${startIso}/${endIso}`,
+                    {params: {room: resource.name}}
+                );
+                (courses || []).forEach(function (course: any) {
+                    slots.push({
+                        source: 'edt',
+                        start: moment(course.startDate, 'YYYY-MM-DD HH:mm:ss'),
+                        end: moment(course.endDate, 'YYYY-MM-DD HH:mm:ss'),
+                        label: lang.translate('rbs.roomSchedule.source.edt'),
+                        resourceName: resource.name,
+                    });
+                });
+            } catch (e) {
+                // Avertissement non bloquant, même logique que checkEdtRoomConflict : une
+                // ressource sans correspondance exacte de libellé côté EDT ne doit jamais
+                // bloquer l'écran.
+            }
+
+            try {
+                const {data: bookings}: any = await http.get(
+                    `/rbs/resource/${resource.id}/bookings`,
+                    {params: {startAt: startIso, endAt: endIso}}
+                );
+                (bookings || []).forEach(function (booking: any) {
+                    if (booking.status === 3 /* REFUSED */) {
+                        return;
+                    }
+                    // GET /resource/:id/bookings renvoie start_date/end_date en ISO 8601 complet
+                    // ("2026-09-22T12:00:00.000") — pas le format "DD/MM/YY HH:mm" utilisé
+                    // ailleurs dans ce fichier pour la RÉPONSE de création, format différent.
+                    // moment() sans 2e argument parse l'ISO nativement.
+                    slots.push({
+                        source: 'rbs',
+                        start: moment(booking.start_date),
+                        end: moment(booking.end_date),
+                        label: booking.booking_reason || lang.translate('rbs.roomSchedule.source.rbs'),
+                        resourceName: resource.name,
+                    });
+                });
+            } catch (e) {
+                // idem : ne jamais bloquer l'écran sur un souci de lecture RBS.
+            }
+
+            return slots;
+        }
+
+        $scope.loadRoomSchedule = async function (): Promise<void> {
+            const selection = $scope.roomSchedule.selectedResource;
+            $scope.roomSchedule.slots = [];
+            if (!selection) {
+                return;
+            }
+            $scope.roomSchedule.loading = true;
+            const rangeStart = $scope.roomSchedule.mode === 'day'
+                ? moment($scope.roomSchedule.pickedDate).startOf('day')
+                : $scope.roomSchedule.weekStart.clone();
+            const rangeEnd = $scope.roomSchedule.mode === 'day'
+                ? rangeStart.clone().add(1, 'day')
+                : rangeStart.clone().add(7, 'days');
+            const startIso = rangeStart.format('YYYY-MM-DDTHH:mm:ss');
+            const endIso = rangeEnd.format('YYYY-MM-DDTHH:mm:ss');
+
+            // selection === 'ALL' : toutes les ressources du type actuellement sélectionné.
+            const targets = selection === 'ALL'
+                ? $scope.roomSchedule.resources.filter(function (r: any) { return r.typeId === $scope.roomSchedule.selectedType; })
+                : [selection];
+
+            const perResource = await Promise.all(
+                targets.map(function (r: any) { return fetchSlotsForResource(r, startIso, endIso); })
+            );
+            const slots = ([] as any[]).concat(...perResource);
+            slots.sort(function (a, b) { return a.start.valueOf() - b.start.valueOf(); });
+            $scope.roomSchedule.slots = slots;
+            $scope.roomSchedule.loading = false;
+            $scope.safeApply();
+        };
+
+        // Choix d'un type : bascule par défaut sur "toutes les ressources de ce type" (vue
+        // globale), une ressource précise reste un choix explicite ensuite dans le sélecteur.
+        $scope.pickRoomScheduleType = function (): void {
+            $scope.roomSchedule.selectedResource = $scope.roomSchedule.selectedType ? 'ALL' : null;
+            $scope.loadRoomSchedule();
+        };
+
+        // Onglet Modération : liste des réservations à traiter (droit modérateur `process`).
+        $scope.showModeration = function () {
+            $scope.display.admin = false;
+            $scope.display.list = true;
+            $scope.display.moderation = true;
+            $scope.bookings.filters.booking = true;
+            $scope.bookings.filters.unprocessed = true;
+            delete $scope.bookings.filters.mine;
+            $scope.bookings.syncForShowList();
+            $scope.bookings.applyFilters();
+            template.open('bookings', 'main-list');
+            $scope.safeApply();
+        };
+
         $scope.showManage = function () {
             $scope.display.list = undefined;
             $scope.display.admin = true;
+            $scope.display.moderation = false;
             $scope.resourceTypes.deselectAllResources();
 
             var processableResourceTypes = _.filter(
@@ -510,6 +737,14 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
             //fixme Why model.recordedSelections.firstResourceType = true;
             model.recordedSelections.allResources = true;
             $scope.currentResourceType = undefined;
+            // Sortie du mode gestion : restaurer les boutons « Nouvelle réservation » et « Export »
+            $scope.display.admin = false;
+            $scope.display.moderation = false;
+            $scope.display.create = $scope.canCreateBooking();
+            // showManage() a laissé display.list à undefined -> défaut = calendrier
+            if ($scope.display.list === undefined) {
+                $scope.display.list = false;
+            }
             $scope.resetSort();
             model.refresh($scope.display.list);
             template.open('main', 'main-view');
@@ -948,9 +1183,9 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
             } else {
                 $scope.booking.startTime = minTime;
                 if (startMoment.isAfter(maxTime)) {
-                    startMoment.add('day', 1);
-                    endMoment.add('day', 1);
-                    maxTime.add('day', 1);
+                    startMoment.add(1, 'day');
+                    endMoment.add(1, 'day');
+                    maxTime.add(1, 'day');
                 }
             }
             if (endMoment.isBefore(maxTime)) {
@@ -1242,6 +1477,186 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
             template.open('resources', 'resource/edit-resource-type');
         };
 
+        // Types de salles courants, pour éviter à un établissement de tout ressaisir à la main.
+        // La catégorie est du texte libre côté serveur (cf. jsonschema/createResourceType.json) :
+        // ce catalogue n'est qu'une suggestion de départ, pas une liste fermée.
+        $scope.defaultResourceTypesCatalog = [
+            { name: 'Gymnase', category: 'GYMNASE' },
+            { name: 'Terrain de sport / Stade', category: 'GYMNASE' },
+            { name: 'Laboratoire de Physique-Chimie', category: 'LABO_PHYSIQUE_CHIMIE' },
+            { name: 'Laboratoire de SVT', category: 'LABO_SVT' },
+            { name: 'CDI', category: 'CDI' },
+            { name: 'Amphithéâtre', category: 'AMPHITHEATRE' },
+            { name: 'Salle informatique', category: 'TECHNO' },
+            { name: 'Salle de musique', category: 'MUSIQUE' },
+            { name: "Salle d'arts plastiques", category: 'ARTS' }
+        ];
+
+        // Ouvre l'écran de sélection (cases à cocher + quantité) au lieu de créer directement :
+        // certaines catégories (labo, amphithéâtre, terrain de sport) peuvent exister en plusieurs
+        // exemplaires dans un même établissement, contrairement à gymnase/CDI qui sont uniques.
+        $scope.createDefaultResourceTypes = function () {
+            if (!$scope.selectedStructure) {
+                return;
+            }
+            var existingNames = _.map($scope.selectedStructure.types || [], function (t) {
+                return t.name;
+            });
+            $scope.defaultTypesSelection = _.map($scope.defaultResourceTypesCatalog, function (item) {
+                var exists = existingNames.indexOf(item.name) !== -1;
+                return {
+                    name: item.name,
+                    category: item.category,
+                    alreadyExists: exists,
+                    checked: !exists,
+                    quantity: 1
+                };
+            });
+            // Objet (pas une primitive nue) : le sous-écran est chargé dans un scope enfant par
+            // template.open(), qui shadowe silencieusement toute primitive liée en ng-model (le
+            // scope enfant écrit sa propre copie, jamais visible du $scope fermé dans cette
+            // fonction) — même piège que réglé pour item.checked/item.quantity du ng-repeat
+            // ci-dessus, déjà des objets et donc épargnés. Confirmé : la saisie libre n'avait
+            // strictement aucun effet (aucune requête réseau émise au clic sur Enregistrer).
+            $scope.customTypesForm = { input: '' };
+            $scope.currentErrors = [];
+            $scope.display.processing = undefined;
+            template.open('resources', 'resource/create-default-resource-types');
+        };
+
+        $scope.confirmCreateDefaultResourceTypes = function () {
+            if (!$scope.selectedStructure) {
+                return;
+            }
+            var toCreate = [];
+            ($scope.defaultTypesSelection || []).forEach(function (item) {
+                if (!item.checked || item.alreadyExists) return;
+                var qty = parseInt(item.quantity, 10) || 1;
+                if (qty <= 1) {
+                    toCreate.push({ name: item.name, category: item.category });
+                } else {
+                    for (var i = 1; i <= qty; i++) {
+                        toCreate.push({ name: item.name + ' ' + i, category: item.category });
+                    }
+                }
+            });
+
+            // Saisie libre : une ligne par salle, au format "Nom" ou "Nom - CATEGORIE".
+            // Catégorie absente -> GENERAL (l'admin pourra la corriger ensuite dans l'édition du type).
+            (($scope.customTypesForm.input || '').split('\n')).forEach(function (line) {
+                line = line.trim();
+                if (!line) return;
+                var parts = line.split(' - ');
+                var name = parts[0].trim();
+                var category = (parts.length > 1 && parts[1].trim()) ? parts[1].trim().toUpperCase() : 'GENERAL';
+                if (name) toCreate.push({ name: name, category: category });
+            });
+
+            if (toCreate.length === 0) {
+                $scope.closeResourceType();
+                return;
+            }
+
+            $scope.currentErrors = [];
+            $scope.display.processing = true;
+            var remaining = toCreate.length;
+            var onOneDone = function () {
+                remaining--;
+                if (remaining === 0) {
+                    $scope.display.processing = undefined;
+                    model.refreshRessourceType();
+                    $scope.closeResourceType();
+                    $scope.safeApply();
+                }
+            };
+            toCreate.forEach(function (item) {
+                var type = new RBS.ResourceType();
+                type.name = item.name;
+                type.category = item.category;
+                type.validation = false;
+                type.color = model.getNextColor();
+                type.structure = $scope.selectedStructure;
+                type.slotprofile = null;
+                type.save(onOneDone, function (e) {
+                    $scope.currentErrors.push(e);
+                    onOneDone();
+                });
+            });
+        };
+
+        // Génération des réservations depuis l'Emploi du temps (scénario BFC 1.3, étape 5 :
+        // "traiter les besoins récurrents avant la rentrée") — remplace la ressaisie une par une.
+        // Toujours un aperçu (rien n'est créé) avant de proposer la confirmation réelle.
+        // weeksToScan : nombre de semaines à analyser à partir de weekStart (par défaut 1). Utile
+        // pour les emplois du temps qui alternent (semaine A/semaine B) : une seule semaine peut
+        // manquer certains cours qui n'ont lieu qu'une semaine sur deux — l'élargir à 2 semaines
+        // (ou plus) permet de tous les détecter avant de les répéter sur toute la période choisie.
+        $scope.edtImportForm = { weekStart: '', periodicEndDate: '', weeksToScan: 1 };
+        $scope.edtImportReport = null;
+        $scope.edtImportLoading = false;
+        $scope.edtImportError = null;
+
+        $scope.openEdtImport = function () {
+            if (!$scope.selectedStructure) { return; }
+            const today = new Date();
+            const endOfSchoolYear = new Date(today.getMonth() >= 7 ? today.getFullYear() + 1 : today.getFullYear(), 6, 5);
+            // input[type=date] d'AngularJS attend un objet Date comme valeur de modèle, pas une
+            // chaîne "yyyy-MM-dd" : avec une chaîne, le champ affichait "jj/mm/aaaa" à l'écran bien
+            // que la valeur réelle soit correctement présente en mémoire (d'où des résultats
+            // corrects malgré un champ visuellement vide, et un garde-fou qui ne se déclenchait
+            // jamais puisque la valeur n'était jamais réellement vide).
+            $scope.edtImportForm = {
+                weekStart: today,
+                periodicEndDate: endOfSchoolYear,
+                weeksToScan: 1,
+            };
+            $scope.edtImportReport = null;
+            $scope.edtImportError = null;
+            template.open('resources', 'resource/edt-import');
+        };
+
+        $scope.closeEdtImport = function () {
+            $scope.edtImportReport = null;
+            template.open('resources', 'resource/manage-resources');
+        };
+
+        const runEdtImport = async (dryRun: boolean): Promise<void> => {
+            // Garde-fou : ne jamais envoyer une requête avec des dates vides/invalides (l'utilisateur
+            // a pu vider un champ pré-rempli) — mieux vaut un message clair qu'un résultat calculé
+            // sur une date par défaut du navigateur (souvent "aujourd'hui", trompeur).
+            if (!$scope.edtImportForm.weekStart || !$scope.edtImportForm.periodicEndDate) {
+                $scope.edtImportError = lang.translate('rbs.edtImport.missingDates');
+                return;
+            }
+            $scope.edtImportLoading = true;
+            $scope.edtImportError = null;
+            try {
+                const periodicEndDate = Math.floor(new Date($scope.edtImportForm.periodicEndDate).getTime() / 1000);
+                // Une semaine complète (7 jours) suffit à capter chaque créneau qui a lieu toutes
+                // les semaines — weeksToScan permet d'élargir la fenêtre pour capter aussi les
+                // cours qui n'ont lieu qu'une semaine sur deux (semaine A/B).
+                const weeksToScan = Math.max(1, parseInt(String($scope.edtImportForm.weeksToScan), 10) || 1);
+                const weekStartDate = new Date($scope.edtImportForm.weekStart);
+                const weekEndDate = new Date(weekStartDate.getTime() + (weeksToScan * 7 - 1) * 24 * 3600 * 1000);
+                const toDateInput = (d: Date) => d.toISOString().slice(0, 10);
+                const { data } = await http.post(`/rbs/structures/${$scope.selectedStructure.id}/import-from-edt`, {
+                    startAt: toDateInput(weekStartDate),
+                    endAt: toDateInput(weekEndDate),
+                    periodicEndDate,
+                    dryRun,
+                });
+                $scope.edtImportReport = data;
+                $scope.edtImportReport.confirmed = !dryRun;
+            } catch (e) {
+                $scope.edtImportError = lang.translate('rbs.edtImport.error');
+            }
+            $scope.edtImportLoading = false;
+            safeApply($scope);
+        };
+
+        $scope.previewEdtImport = (): Promise<void> => runEdtImport(true);
+        $scope.confirmEdtImport = (): Promise<void> => runEdtImport(false);
+
         $scope.newResource = function () {
             $scope.isCreation = true;
             $scope.display.processing = undefined;
@@ -1255,6 +1670,7 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
             $scope.editedResource.availabilities = new Availabilities();
             $scope.editedResource.unavailabilities = new Availabilities();
             $scope.openAvailabilitiesTable = false;
+            $scope.loadEquipmentCatalog();
             template.open('resources', 'resource/edit-resource');
         };
 
@@ -1285,7 +1701,148 @@ export const RbsController: any = ng.controller('RbsController', ['$scope', 'Boo
             $scope.editedResource.hasMinDelay =
                 $scope.editedResource.min_delay !== undefined &&
                 $scope.editedResource.min_delay !== null;
+            $scope.loadEquipmentCatalog();
+            $scope.loadAssignments();
             template.open('resources', 'resource/edit-resource');
+        };
+
+        // Équipements fixes (scénario BFC 1.3, étape 1) : catalogue par établissement, réutilisable
+        // entre ressources — cf. modules/rbs/src/main/resources/sql/017-resource-capacity-equipment-mobile-key.sql.
+        $scope.equipmentCatalog = [];
+        $scope.equipmentPicker = { selectedId: null };
+        $scope.newEquipmentName = '';
+
+        $scope.loadEquipmentCatalog = async (): Promise<void> => {
+            $scope.equipmentCatalog = [];
+            const schoolId: string = $scope.currentResourceType && $scope.currentResourceType.school_id;
+            if (!schoolId) { return; }
+            try {
+                const {data}: any = await http.get(`/rbs/equipments/${schoolId}`);
+                $scope.equipmentCatalog = data || [];
+            } catch (e) {
+                $scope.equipmentCatalog = [];
+            }
+            safeApply($scope);
+        };
+
+        const saveResourceEquipment = async (): Promise<void> => {
+            if (!$scope.editedResource || !$scope.editedResource.id) { return; }
+            const equipmentIds: number[] = ($scope.editedResource.equipment || []).map((e: any) => e.id);
+            try {
+                await http.put(`/rbs/resource/${$scope.editedResource.id}/equipment`, {equipmentIds});
+            } catch (e) {
+                notify.error(lang.translate('rbs.resource.edit.equipment.save.error'));
+            }
+        };
+
+        // "Capacité" et "équipements" ne concernent qu'une salle fixe — les vider en cochant
+        // "matériel mobile" évite de conserver des données résiduelles incohérentes (masquées
+        // mais toujours présentes en mémoire, donc réenregistrées si on décoche puis recoche).
+        // Inversement, un local physique (salle, amphithéâtre, gymnase...) est unique : la
+        // "quantité" n'a de sens que pour du matériel mobile, on la fige à 1 sinon.
+        $scope.onIsMobileChanged = (): void => {
+            if ($scope.editedResource.is_mobile) {
+                $scope.editedResource.capacity = null;
+                if ($scope.editedResource.equipment && $scope.editedResource.equipment.length) {
+                    $scope.editedResource.equipment = [];
+                    saveResourceEquipment();
+                }
+            } else {
+                $scope.editedResource.quantity = 1;
+            }
+        };
+
+        $scope.addEquipment = (): void => {
+            const id = parseInt($scope.equipmentPicker.selectedId, 10);
+            if (!id) { return; }
+            if (!$scope.editedResource.equipment) { $scope.editedResource.equipment = []; }
+            if (!$scope.editedResource.equipment.some((e: any) => e.id === id)) {
+                const found = $scope.equipmentCatalog.find((e: any) => e.id === id);
+                if (found) {
+                    $scope.editedResource.equipment.push(found);
+                    saveResourceEquipment();
+                }
+            }
+            $scope.equipmentPicker.selectedId = null;
+        };
+
+        $scope.removeEquipment = (id: number): void => {
+            if (!$scope.editedResource.equipment) { return; }
+            $scope.editedResource.equipment = $scope.editedResource.equipment.filter((e: any) => e.id !== id);
+            saveResourceEquipment();
+        };
+
+        $scope.createAndAddEquipment = async (): Promise<void> => {
+            const name: string = ($scope.newEquipmentName || '').trim();
+            const schoolId: string = $scope.currentResourceType && $scope.currentResourceType.school_id;
+            if (!name || !schoolId) { return; }
+            try {
+                const {data}: any = await http.post('/rbs/equipment', {school_id: schoolId, name});
+                $scope.equipmentCatalog.push(data);
+                $scope.newEquipmentName = '';
+                $scope.equipmentPicker.selectedId = data.id;
+                $scope.addEquipment();
+            } catch (e) {
+                notify.error(lang.translate('rbs.resource.edit.equipment.save.error'));
+            }
+            safeApply($scope);
+        };
+
+        // Affectation informative (matériel mobile ↔ salle(s), scénario BFC 1.3, étape 1) :
+        // uniquement disponible après le premier enregistrement (resourceId requis) — cf.
+        // modules/rbs/src/main/resources/sql/018-resource-assignment.sql. N'impacte jamais les
+        // réservations, cf. mémoire rbs-affectation-materiel-mobile-salle.
+        $scope.assignmentCandidates = [];
+        $scope.currentAssignments = [];
+        $scope.assignmentPicker = { selectedId: null };
+
+        $scope.loadAssignments = async (): Promise<void> => {
+            $scope.assignmentCandidates = [];
+            $scope.currentAssignments = [];
+            const schoolId: string = $scope.currentResourceType && $scope.currentResourceType.school_id;
+            const resourceId = $scope.editedResource && $scope.editedResource.id;
+            if (!schoolId || !resourceId) { return; }
+            try {
+                const [candidates, current]: any = await Promise.all([
+                    http.get(`/rbs/resources/candidates/${schoolId}/${resourceId}`),
+                    http.get(`/rbs/resource/${resourceId}/assignments`),
+                ]);
+                $scope.assignmentCandidates = candidates.data || [];
+                $scope.currentAssignments = current.data || [];
+            } catch (e) {
+                $scope.assignmentCandidates = [];
+                $scope.currentAssignments = [];
+            }
+            safeApply($scope);
+        };
+
+        const saveAssignments = async (): Promise<void> => {
+            const resourceId = $scope.editedResource && $scope.editedResource.id;
+            if (!resourceId) { return; }
+            const resourceIds: number[] = ($scope.currentAssignments || []).map((r: any) => r.id);
+            try {
+                await http.put(`/rbs/resource/${resourceId}/assignments`, {resourceIds});
+            } catch (e) {
+                notify.error(lang.translate('rbs.resource.edit.assignment.save.error'));
+            }
+        };
+
+        $scope.addAssignment = (): void => {
+            const id = parseInt($scope.assignmentPicker.selectedId, 10);
+            if (!id) { return; }
+            if (!$scope.currentAssignments.some((r: any) => r.id === id)) {
+                const found = $scope.assignmentCandidates.find((r: any) => r.id === id);
+                if (found) {
+                    $scope.currentAssignments.push(found);
+                    saveAssignments();
+                }
+            }
+            $scope.assignmentPicker.selectedId = null;
+        };
+
+        $scope.removeAssignment = (id: number): void => {
+            $scope.currentAssignments = $scope.currentAssignments.filter((r: any) => r.id !== id);
+            saveAssignments();
         };
 
         $scope.shareCurrentResourceType = function () {

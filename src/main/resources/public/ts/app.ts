@@ -21,5 +21,11 @@ routes.define(function ($routeProvider) {
         })
         .when('/booking/:bookingId/:start', {
             action: 'viewBooking',
+        })
+        .when('/edt-import/:structureId', {
+            action: 'openEdtImportFromRoute',
+        })
+        .when('/edt-import', {
+            action: 'openEdtImportFromRoute',
         });
 });
