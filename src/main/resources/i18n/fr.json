@@ -618,5 +618,10 @@
   "rbs.export.ical": "Agenda (iCalendar .ics)",
   "rbs.export.pdf": "PDF",
   "rbs.export.submit": "Exporter",
-  "rbs.share.levels.help": "Lecture : voir le type et ses ressources. Réservation : réserver. Validation : valider ou refuser les demandes. Gestion : modifier le type et ses ressources, et le partager."
+  "rbs.share.levels.help": "Lecture : voir le type et ses ressources. Réservation : réserver. Validation : valider ou refuser les demandes. Gestion : modifier le type et ses ressources, et le partager.",
+  "rbs.view.fortnight": "Quinzaine",
+  "rbs.agenda.prevfortnight": "Quinzaine précédente",
+  "rbs.agenda.nextfortnight": "Quinzaine suivante",
+  "rbs.agenda.show.saturday": "Afficher le samedi",
+  "rbs.agenda.show.sunday": "Afficher le dimanche"
 }

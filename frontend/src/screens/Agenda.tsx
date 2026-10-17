@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { api, Booking } from '../api';
-import { bookingColor, dayBookings, isSeriesParent, daySegments, isPastSlot, monthGrid, slotStart, splitMore, toLocalInput, typeColors, visibleHours } from '../calendar';
+import { bookingColor, dayBookings, dayVisible, fortnightGrid, isSeriesParent, daySegments, isPastSlot, monthGrid, slotStart, splitMore, toLocalInput, typeColors, visibleHours } from '../calendar';
 import { BookingListView } from '../components/BookingListView';
 import { CalendarItem, dayHeading } from '../components/CalendarParts';
 import { ResourceTree } from '../components/ResourceTree';
@@ -18,7 +18,7 @@ import { startOfWeek, weekDays, yyyymmdd } from '../utils';
 import { ExportDialog } from './ExportDialog';
 import { Modal } from './Modal';
 
-type View = 'day' | 'week' | 'month' | 'list';
+type View = 'day' | 'week' | 'fortnight' | 'month' | 'list';
 
 /** Hauteur de l'en-tête des jours (nom + date sur deux lignes, police du thème comprise), en pixels. */
 const HEADER_PX = 56;
@@ -41,6 +41,9 @@ export function Agenda({ moderation = false }: { moderation?: boolean } = {}) {
   const [cursor, setCursor] = useState(() => new Date());
   const [exporting, setExporting] = useState(false);
   const [mine, setMine] = useState(false);
+  // Samedi et dimanche masqués par défaut, comme les autres calendriers ; cases pour les afficher.
+  const [showSaturday, setShowSaturday] = useState(false);
+  const [showSunday, setShowSunday] = useState(false);
   const [toProcess, setToProcess] = useState(moderation);
   const [more, setMore] = useState<{ day: Date; items: Booking[] } | null>(null);
   const [slotChoice, setSlotChoice] = useState<Date | null>(null);
@@ -53,16 +56,19 @@ export function Agenda({ moderation = false }: { moderation?: boolean } = {}) {
   const locale = dateLocale();
 
   const monday = useMemo(() => startOfWeek(cursor), [cursor]);
-  const days = useMemo(() => weekDays(monday), [monday]);
+  const allDays = useMemo(() => weekDays(monday), [monday]);
+  const days = useMemo(() => allDays.filter((d) => dayVisible(d, showSaturday, showSunday)), [allDays, showSaturday, showSunday]);
   const weeks = useMemo(() => monthGrid(cursor), [cursor]);
+  const fortnight = useMemo(() => fortnightGrid(cursor), [cursor]);
 
   // Bornes de chargement selon la vue (mois = semaines entières affichées).
   const { start, end } = useMemo(() => {
     if (view === 'month') return { start: yyyymmdd(weeks[0][0]), end: yyyymmdd(weeks[weeks.length - 1][6]) };
+    if (view === 'fortnight') return { start: yyyymmdd(fortnight[0][0]), end: yyyymmdd(fortnight[1][6]) };
     if (view === 'day') return { start: yyyymmdd(cursor), end: yyyymmdd(cursor) };
     if (view === 'list' && dateFilter?.from && dateFilter.to && dateFilter.from <= dateFilter.to) return { start: dateFilter.from, end: dateFilter.to };
-    return { start: yyyymmdd(monday), end: yyyymmdd(days[6]) };
-  }, [view, cursor, monday, days, weeks, dateFilter]);
+    return { start: yyyymmdd(monday), end: yyyymmdd(allDays[6]) };
+  }, [view, cursor, monday, allDays, weeks, fortnight, dateFilter]);
 
   const tree = useResourceTree();
   const notif = useNotifications();
@@ -106,6 +112,7 @@ export function Agenda({ moderation = false }: { moderation?: boolean } = {}) {
     const d = new Date(cursor);
     if (view === 'day') d.setDate(d.getDate() + dir);
     else if (view === 'week' || view === 'list') d.setDate(d.getDate() + dir * 7);
+    else if (view === 'fortnight') d.setDate(d.getDate() + dir * 14);
     else d.setMonth(d.getMonth() + dir);
     setCursor(d);
   };
@@ -115,11 +122,14 @@ export function Agenda({ moderation = false }: { moderation?: boolean } = {}) {
       ? cursor.toLocaleDateString(locale, { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })
       : view === 'month'
         ? cursor.toLocaleDateString(locale, { month: 'long', year: 'numeric' })
-        : `${days[0].toLocaleDateString(locale, { day: '2-digit', month: '2-digit' })} – ${days[6].toLocaleDateString(locale, { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
+        : view === 'fortnight'
+          ? `${fortnight[0][0].toLocaleDateString(locale, { day: '2-digit', month: '2-digit' })} – ${fortnight[1][6].toLocaleDateString(locale, { day: '2-digit', month: '2-digit', year: 'numeric' })}`
+          : `${allDays[0].toLocaleDateString(locale, { day: '2-digit', month: '2-digit' })} – ${allDays[6].toLocaleDateString(locale, { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
   const shiftLabels: Record<View, [string, string]> = {
     day: [t('rbs.agenda.prevday', { defaultValue: 'Jour précédent' }), t('rbs.agenda.nextday', { defaultValue: 'Jour suivant' })],
     week: [t('rbs.agenda.prev', { defaultValue: 'Semaine précédente' }), t('rbs.agenda.next', { defaultValue: 'Semaine suivante' })],
     list: [t('rbs.agenda.prev', { defaultValue: 'Semaine précédente' }), t('rbs.agenda.next', { defaultValue: 'Semaine suivante' })],
+    fortnight: [t('rbs.agenda.prevfortnight', { defaultValue: 'Quinzaine précédente' }), t('rbs.agenda.nextfortnight', { defaultValue: 'Quinzaine suivante' })],
     month: [t('rbs.agenda.prevmonth', { defaultValue: 'Mois précédent' }), t('rbs.agenda.nextmonth', { defaultValue: 'Mois suivant' })],
   };
 
@@ -213,12 +223,12 @@ export function Agenda({ moderation = false }: { moderation?: boolean } = {}) {
   };
 
   /** Vue mois : semaines (lignes) × jours (colonnes), réservations en ligne ; au-delà de la limite, « voir plus ». */
-  const monthView = () => (
+  const monthView = (rows: Date[][], kind: 'month' | 'fortnight') => (
     <div style={{ overflowX: 'auto' }}>
-      <table className="table table-bordered mb-0" style={{ minWidth: 780, tableLayout: 'fixed' }} data-calendar-grid="month">
+      <table className="table table-bordered mb-0" style={{ minWidth: 780, tableLayout: 'fixed' }} data-calendar-grid={kind}>
         <thead>
           <tr>
-            {weeks[0].map((d, i) => (
+            {rows[0].filter((d) => dayVisible(d, showSaturday, showSunday)).map((d, i) => (
               <th key={i} className="text-center" style={{ background: '#e8f5e9', textTransform: 'capitalize' }}>
                 {d.toLocaleDateString(locale, { weekday: 'long' })}
               </th>
@@ -226,10 +236,10 @@ export function Agenda({ moderation = false }: { moderation?: boolean } = {}) {
           </tr>
         </thead>
         <tbody>
-          {weeks.map((week, wi) => (
+          {rows.map((week, wi) => (
             <tr key={wi}>
-              {week.map((day, di) => {
-                const inMonth = day.getMonth() === cursor.getMonth();
+              {week.filter((d) => dayVisible(d, showSaturday, showSunday)).map((day, di) => {
+                const inMonth = kind === 'fortnight' || day.getMonth() === cursor.getMonth();
                 const list = dayBookings(bookings, day);
                 const { shown, more: rest } = splitMore(list, MONTH_MAX);
                 return (
@@ -338,12 +348,24 @@ export function Agenda({ moderation = false }: { moderation?: boolean } = {}) {
             <div className="d-flex align-items-center gap-12 flex-wrap">
               {!moderation && (
               <div className="btn-group" role="group" aria-label={t('rbs.agenda.views', { defaultValue: 'Vues' })}>
-                {(['day', 'week', 'month', 'list'] as View[]).map((v) => (
+                {(['day', 'week', 'fortnight', 'month', 'list'] as View[]).map((v) => (
                   <button key={v} type="button" className={`btn btn-sm ${view === v ? 'btn-primary' : 'btn-secondary'}`} aria-pressed={view === v} onClick={() => setView(v)}>
-                    {v === 'day' ? t('rbs.view.day', { defaultValue: 'Jour' }) : v === 'week' ? t('rbs.view.week', { defaultValue: 'Semaine' }) : v === 'month' ? t('rbs.view.month', { defaultValue: 'Mois' }) : t('rbs.view.list', { defaultValue: 'Liste' })}
+                    {v === 'day' ? t('rbs.view.day', { defaultValue: 'Jour' }) : v === 'week' ? t('rbs.view.week', { defaultValue: 'Semaine' }) : v === 'fortnight' ? t('rbs.view.fortnight', { defaultValue: 'Quinzaine' }) : v === 'month' ? t('rbs.view.month', { defaultValue: 'Mois' }) : t('rbs.view.list', { defaultValue: 'Liste' })}
                   </button>
                 ))}
               </div>
+              )}
+              {!moderation && view !== 'list' && view !== 'day' && (
+                <>
+                  <label className="d-flex align-items-center gap-4" style={{ fontSize: 13 }}>
+                    <input type="checkbox" checked={showSaturday} onChange={(e) => setShowSaturday(e.target.checked)} />
+                    {t('rbs.agenda.show.saturday', { defaultValue: 'Afficher le samedi' })}
+                  </label>
+                  <label className="d-flex align-items-center gap-4" style={{ fontSize: 13 }}>
+                    <input type="checkbox" checked={showSunday} onChange={(e) => setShowSunday(e.target.checked)} />
+                    {t('rbs.agenda.show.sunday', { defaultValue: 'Afficher le dimanche' })}
+                  </label>
+                </>
               )}
               <label className="d-flex align-items-center gap-4" style={{ fontSize: 13 }}>
                 <input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} />
@@ -388,7 +410,7 @@ export function Agenda({ moderation = false }: { moderation?: boolean } = {}) {
                 <input
                   type="checkbox"
                   checked={!!dateFilter}
-                  onChange={(e) => setDateFilter(e.target.checked ? { from: yyyymmdd(monday), to: yyyymmdd(days[6]) } : null)}
+                  onChange={(e) => setDateFilter(e.target.checked ? { from: yyyymmdd(monday), to: yyyymmdd(allDays[6]) } : null)}
                 />
                 {t('rbs.selector.dates', { defaultValue: 'Filtrer de date à date' })}
               </label>
@@ -432,7 +454,8 @@ export function Agenda({ moderation = false }: { moderation?: boolean } = {}) {
           )}
           {view === 'day' && grid([cursor])}
           {view === 'week' && grid(days)}
-          {view === 'month' && monthView()}
+          {view === 'fortnight' && monthView(fortnight, 'fortnight')}
+          {view === 'month' && monthView(weeks, 'month')}
         </div>
       </div>
     </div>

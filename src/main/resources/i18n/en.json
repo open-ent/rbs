@@ -618,5 +618,10 @@
   "rbs.view.day": "Day",
   "rbs.view.month": "Month",
   "rbs.view.week": "Week",
-  "rbs.share.levels.help": "Read: see the type and its resources. Booking: book. Validation: validate or refuse requests. Management: edit the type and its resources, and share it."
+  "rbs.share.levels.help": "Read: see the type and its resources. Booking: book. Validation: validate or refuse requests. Management: edit the type and its resources, and share it.",
+  "rbs.view.fortnight": "Fortnight",
+  "rbs.agenda.prevfortnight": "Previous fortnight",
+  "rbs.agenda.nextfortnight": "Next fortnight",
+  "rbs.agenda.show.saturday": "Show Saturday",
+  "rbs.agenda.show.sunday": "Show Sunday"
 }

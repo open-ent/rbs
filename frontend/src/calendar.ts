@@ -172,3 +172,14 @@ export function toLocalInput(d: Date): string {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }
+
+/** Deux semaines entières (lundi → dimanche) à partir du lundi de la date : la vue « Quinzaine ». */
+export function fortnightGrid(cursor: Date): Date[][] {
+  const monday = startOfWeek(cursor);
+  const next = new Date(monday);
+  next.setDate(monday.getDate() + 7);
+  return [weekDays(monday), weekDays(next)];
+}
+
+/** Jour affiché ? Samedi et dimanche ne le sont que si on les a demandés (cases « Afficher le samedi / le dimanche »). */
+export const dayVisible = (d: Date, showSaturday: boolean, showSunday: boolean): boolean => (d.getDay() !== 6 || showSaturday) && (d.getDay() !== 0 || showSunday);

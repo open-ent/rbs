@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Booking, Resource, ResourceType } from './api';
-import { bookingColor, isSeriesParent, dayBookings, daySegments, isPeriodic, isPastSlot, monthGrid, PALETTE, slotStart, splitMore, statusKind, toLocalInput, touchesDay, typeColors, visibleHours } from './calendar';
+import { bookingColor, dayVisible, fortnightGrid, isSeriesParent, dayBookings, daySegments, isPeriodic, isPastSlot, monthGrid, PALETTE, slotStart, splitMore, statusKind, toLocalInput, touchesDay, typeColors, visibleHours } from './calendar';
 
 // Dates avec fuseau (« Z ») : indépendantes du fuseau de la machine de test, sauf pour les bornes de jour,
 // construites en heure locale comme le fait l'écran.
@@ -130,5 +130,21 @@ describe('créneau cliqué', () => {
   it('refuse le passé', () => {
     expect(isPastSlot(new Date(2026, 0, 1), new Date(2026, 5, 1))).toBe(true);
     expect(isPastSlot(new Date(2026, 8, 1), new Date(2026, 5, 1))).toBe(false);
+  });
+});
+
+describe('quinzaine et week-end', () => {
+  it('deux semaines entières à partir du lundi', () => {
+    const [a, b] = fortnightGrid(new Date(2026, 9, 21)); // mercredi 21/10
+    expect([a[0].getDate(), a[6].getDate(), b[0].getDate(), b[6].getDate()]).toEqual([19, 25, 26, 1]);
+    expect(b[6].getMonth()).toBe(10);
+  });
+  it('samedi et dimanche masqués par défaut, affichés à la demande', () => {
+    const sat = new Date(2026, 9, 24);
+    const sun = new Date(2026, 9, 25);
+    const mon = new Date(2026, 9, 26);
+    expect([dayVisible(sat, false, false), dayVisible(sun, false, false), dayVisible(mon, false, false)]).toEqual([false, false, true]);
+    expect([dayVisible(sat, true, false), dayVisible(sun, true, false)]).toEqual([true, false]);
+    expect(dayVisible(sun, false, true)).toBe(true);
   });
 });
