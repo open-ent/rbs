@@ -560,5 +560,12 @@
   "rbs.agenda.book.resource": "Ressource à réserver",
   "rbs.agenda.book.go": "Réserver",
   "rbs.bookings.more.link": "voir plus",
-  "rbs.agenda.more.title": "[[count]] réservations — [[day]]"
+  "rbs.agenda.more.title": "[[count]] réservations — [[day]]",
+  "rbs.view.list": "Liste",
+  "rbs.list.selectall": "Tout sélectionner",
+  "rbs.list.select": "Sélectionner",
+  "rbs.list.collapse": "Replier la série",
+  "rbs.list.expand": "Déplier la série",
+  "rbs.list.selected": "[[count]] sélectionnée(s)",
+  "rbs.list.clear": "Tout désélectionner"
 }

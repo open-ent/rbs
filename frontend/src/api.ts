@@ -207,6 +207,10 @@ export const getResourceBookings = async (id: number): Promise<Booking[]> =>
 export const getBookingsInRange = async (startdate: string, enddate: string): Promise<Booking[]> =>
   json<Booking[]>(await fetch(`/rbs/bookings/all/${startdate}/${enddate}`, base));
 
+/** Toutes les occurrences d'une série (la liste n'en reçoit que celles de la période affichée). */
+export const getSeriesSlots = async (parentBookingId: number): Promise<Booking[]> =>
+  json<Booking[]>(await fetch(`/rbs/bookings/full/slots/${parentBookingId}`, base));
+
 // ── Préférence `rbs` du compte (état de l'arbre des ressources), partagée avec l'IHM AngularJS ─────────
 /** Lit la préférence entière : elle porte d'autres clés que l'arbre, qu'une écriture ne doit pas effacer. */
 export const getRbsPreference = async (): Promise<Record<string, unknown>> => {
@@ -384,6 +388,7 @@ export const api = {
   getResource,
   getResourceBookings,
   getBookingsInRange,
+  getSeriesSlots,
   createBooking,
   createPeriodicBooking,
   getUnprocessedBookings,

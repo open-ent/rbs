@@ -5,16 +5,18 @@ import { Link, useNavigate } from 'react-router-dom';
 
 import { api, Booking } from '../api';
 import { bookingColor, dayBookings, isSeriesParent, daySegments, isPastSlot, monthGrid, slotStart, splitMore, toLocalInput, typeColors, visibleHours } from '../calendar';
+import { BookingListView } from '../components/BookingListView';
 import { CalendarItem, dayHeading } from '../components/CalendarParts';
 import { ResourceTree } from '../components/ResourceTree';
 import { useRbsContext } from '../hooks/useRbsContext';
 import { useResourceTree } from '../hooks/useResourceTree';
 import { dateLocale } from '../locale';
+import { rightsOn } from '../rights';
 import { startOfWeek, weekDays, yyyymmdd } from '../utils';
 import { ExportDialog } from './ExportDialog';
 import { Modal } from './Modal';
 
-type View = 'day' | 'week' | 'month';
+type View = 'day' | 'week' | 'month' | 'list';
 
 /** Hauteur de l'en-tête des jours (nom + date sur deux lignes, police du thème comprise), en pixels. */
 const HEADER_PX = 56;
@@ -41,6 +43,9 @@ export function Agenda() {
   const [more, setMore] = useState<{ day: Date; items: Booking[] } | null>(null);
   const [slotChoice, setSlotChoice] = useState<Date | null>(null);
   const [notice, setNotice] = useState('');
+  // Vue liste : sélection (cases à cocher) et filtre de date à date, qui remplace la semaine affichée.
+  const [selection, setSelection] = useState<Set<number>>(new Set());
+  const [dateFilter, setDateFilter] = useState<{ from: string; to: string } | null>(null);
 
   // Lu au rendu et non à l'import : la locale n'est posée qu'une fois la session chargée.
   const locale = dateLocale();
@@ -53,8 +58,9 @@ export function Agenda() {
   const { start, end } = useMemo(() => {
     if (view === 'month') return { start: yyyymmdd(weeks[0][0]), end: yyyymmdd(weeks[weeks.length - 1][6]) };
     if (view === 'day') return { start: yyyymmdd(cursor), end: yyyymmdd(cursor) };
+    if (view === 'list' && dateFilter?.from && dateFilter.to && dateFilter.from <= dateFilter.to) return { start: dateFilter.from, end: dateFilter.to };
     return { start: yyyymmdd(monday), end: yyyymmdd(days[6]) };
-  }, [view, cursor, monday, days, weeks]);
+  }, [view, cursor, monday, days, weeks, dateFilter]);
 
   const tree = useResourceTree();
   const bookingsQuery = useQuery({ queryKey: ['rbs', 'agenda', start, end], queryFn: () => api.getBookingsInRange(start, end) });
@@ -66,9 +72,11 @@ export function Agenda() {
   const selected = useMemo(() => new Set(tree.selectedIds), [tree.selectedIds]);
   const unprocessedIds = useMemo(() => new Set((unprocessedQuery.data ?? []).map((b) => b.id)), [unprocessedQuery.data]);
 
-  const bookings = (bookingsQuery.data ?? []).filter(
-    (b) => !isSeriesParent(b) && selected.has(b.resource_id) && (!mine || b.owner === ctx.me.userId) && (!toProcess || unprocessedIds.has(b.id)),
-  );
+  /** Filtres de la barre (« mes réservations », « à traiter »). */
+  const passes = (b: Booking) => (!mine || b.owner === ctx.me.userId) && (!toProcess || unprocessedIds.has(b.id));
+  const inSelection = (bookingsQuery.data ?? []).filter((b) => selected.has(b.resource_id));
+  // Le calendrier ne dessine jamais la mère d'une série (elle couvre toute la période) ; la liste la montre.
+  const bookings = inSelection.filter((b) => !isSeriesParent(b) && passes(b));
   const nameOf = (b: Booking) => resources.get(b.resource_id)?.name ?? '';
   const colorOf = (b: Booking) => bookingColor(b, resources, colors);
 
@@ -77,11 +85,17 @@ export function Agenda() {
     setMore(null);
     navigate(b.parent_booking_id != null ? `/booking/${b.id}/${b.start_date.slice(0, 10)}` : `/booking/${b.id}`);
   };
+  const rightsOfBooking = (b: Booking) => {
+    const resource = resources.get(b.resource_id);
+    const type = resource && tree.types.find((x) => x.id === resource.type_id);
+    const rights = type && resource ? rightsOn(type, ctx.me, resource) : undefined;
+    return { process: !!rights?.process, manage: !!rights?.manage };
+  };
 
   const shift = (dir: number) => {
     const d = new Date(cursor);
     if (view === 'day') d.setDate(d.getDate() + dir);
-    else if (view === 'week') d.setDate(d.getDate() + dir * 7);
+    else if (view === 'week' || view === 'list') d.setDate(d.getDate() + dir * 7);
     else d.setMonth(d.getMonth() + dir);
     setCursor(d);
   };
@@ -95,6 +109,7 @@ export function Agenda() {
   const shiftLabels: Record<View, [string, string]> = {
     day: [t('rbs.agenda.prevday', { defaultValue: 'Jour précédent' }), t('rbs.agenda.nextday', { defaultValue: 'Jour suivant' })],
     week: [t('rbs.agenda.prev', { defaultValue: 'Semaine précédente' }), t('rbs.agenda.next', { defaultValue: 'Semaine suivante' })],
+    list: [t('rbs.agenda.prev', { defaultValue: 'Semaine précédente' }), t('rbs.agenda.next', { defaultValue: 'Semaine suivante' })],
     month: [t('rbs.agenda.prevmonth', { defaultValue: 'Mois précédent' }), t('rbs.agenda.nextmonth', { defaultValue: 'Mois suivant' })],
   };
 
@@ -310,9 +325,9 @@ export function Agenda() {
           <div className="d-flex align-items-center justify-content-between mb-12 flex-wrap gap-8">
             <div className="d-flex align-items-center gap-12 flex-wrap">
               <div className="btn-group" role="group" aria-label={t('rbs.agenda.views', { defaultValue: 'Vues' })}>
-                {(['day', 'week', 'month'] as View[]).map((v) => (
+                {(['day', 'week', 'month', 'list'] as View[]).map((v) => (
                   <button key={v} type="button" className={`btn btn-sm ${view === v ? 'btn-primary' : 'btn-secondary'}`} aria-pressed={view === v} onClick={() => setView(v)}>
-                    {v === 'day' ? t('rbs.view.day', { defaultValue: 'Jour' }) : v === 'week' ? t('rbs.view.week', { defaultValue: 'Semaine' }) : t('rbs.view.month', { defaultValue: 'Mois' })}
+                    {v === 'day' ? t('rbs.view.day', { defaultValue: 'Jour' }) : v === 'week' ? t('rbs.view.week', { defaultValue: 'Semaine' }) : v === 'month' ? t('rbs.view.month', { defaultValue: 'Mois' }) : t('rbs.view.list', { defaultValue: 'Liste' })}
                   </button>
                 ))}
               </div>
@@ -353,6 +368,51 @@ export function Agenda() {
             </div>
           )}
 
+          {view === 'list' && (
+            <div className="d-flex align-items-center gap-12 flex-wrap mb-8" style={{ fontSize: 13 }}>
+              <label className="d-flex align-items-center gap-4">
+                <input
+                  type="checkbox"
+                  checked={!!dateFilter}
+                  onChange={(e) => setDateFilter(e.target.checked ? { from: yyyymmdd(monday), to: yyyymmdd(days[6]) } : null)}
+                />
+                {t('rbs.selector.dates', { defaultValue: 'Filtrer de date à date' })}
+              </label>
+              {dateFilter && (
+                <>
+                  <label className="d-flex align-items-center gap-4">
+                    {t('rbs.filters.date.from', { defaultValue: 'Du' })}
+                    <input type="date" value={dateFilter.from} max={dateFilter.to} onChange={(e) => setDateFilter({ ...dateFilter, from: e.target.value })} />
+                  </label>
+                  <label className="d-flex align-items-center gap-4">
+                    {t('rbs.filters.date.to', { defaultValue: 'au' })}
+                    <input type="date" value={dateFilter.to} min={dateFilter.from} onChange={(e) => setDateFilter({ ...dateFilter, to: e.target.value })} />
+                  </label>
+                </>
+              )}
+              {selection.size > 0 && (
+                <span data-selection-bar>
+                  {t('rbs.list.selected', { defaultValue: '[[count]] sélectionnée(s)', count: selection.size })}{' '}
+                  <button type="button" className="btn btn-link p-0" onClick={() => setSelection(new Set())}>
+                    {t('rbs.list.clear', { defaultValue: 'Tout désélectionner' })}
+                  </button>
+                </span>
+              )}
+            </div>
+          )}
+          {view === 'list' && (
+            <BookingListView
+              bookings={inSelection}
+              keep={passes}
+              resourceName={nameOf}
+              colorOf={colorOf}
+              userId={ctx.me.userId}
+              rightsOf={rightsOfBooking}
+              selected={selection}
+              onSelect={setSelection}
+              onOpen={open}
+            />
+          )}
           {view === 'day' && grid([cursor])}
           {view === 'week' && grid(days)}
           {view === 'month' && monthView()}

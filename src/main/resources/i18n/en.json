@@ -560,5 +560,12 @@
   "rbs.agenda.book.resource": "Resource to book",
   "rbs.agenda.book.go": "Book",
   "rbs.bookings.more.link": "show more",
-  "rbs.agenda.more.title": "[[count]] bookings — [[day]]"
+  "rbs.agenda.more.title": "[[count]] bookings — [[day]]",
+  "rbs.view.list": "List",
+  "rbs.list.selectall": "Select all",
+  "rbs.list.select": "Select",
+  "rbs.list.collapse": "Collapse series",
+  "rbs.list.expand": "Expand series",
+  "rbs.list.selected": "[[count]] selected",
+  "rbs.list.clear": "Clear selection"
 }
