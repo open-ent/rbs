@@ -2,6 +2,7 @@ import { RouteObject, createHashRouter } from 'react-router-dom';
 
 import { Agenda } from './screens/Agenda';
 import { BookingDetail } from './screens/BookingDetail';
+import { BookingForm } from './screens/BookingForm';
 import { Moderation } from './screens/Moderation';
 import { Resource } from './screens/Resource';
 import { Resources } from './screens/Resources';
@@ -17,6 +18,8 @@ export const routes: RouteObject[] = [
       { path: 'agenda', element: <Agenda /> },
       { path: 'resource/:resourceId', element: <Resource /> },
       { path: 'moderation', element: <Moderation /> },
+      { path: 'booking/new', element: <BookingForm /> },
+      { path: 'booking/:bookingId/edit', element: <BookingForm /> },
       { path: 'booking/:bookingId', element: <BookingDetail /> },
       { path: 'booking/:bookingId/:start', element: <BookingDetail /> },
     ],

@@ -567,5 +567,11 @@
   "rbs.list.collapse": "Replier la série",
   "rbs.list.expand": "Déplier la série",
   "rbs.list.selected": "[[count]] sélectionnée(s)",
-  "rbs.list.clear": "Tout désélectionner"
+  "rbs.list.clear": "Tout désélectionner",
+  "rbs.back": "Retour au calendrier",
+  "rbs.loading": "Chargement…",
+  "rbs.booking.notfound": "Cette réservation n'existe plus ou vous n'y avez pas accès.",
+  "rbs.booking.from": "de",
+  "rbs.booking.to": "à",
+  "rbs.booking.days": "Jours"
 }

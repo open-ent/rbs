@@ -567,5 +567,11 @@
   "rbs.list.collapse": "Collapse series",
   "rbs.list.expand": "Expand series",
   "rbs.list.selected": "[[count]] selected",
-  "rbs.list.clear": "Clear selection"
+  "rbs.list.clear": "Clear selection",
+  "rbs.back": "Back to the calendar",
+  "rbs.loading": "Loading…",
+  "rbs.booking.notfound": "This booking no longer exists or you do not have access to it.",
+  "rbs.booking.from": "from",
+  "rbs.booking.to": "to",
+  "rbs.booking.days": "Days"
 }

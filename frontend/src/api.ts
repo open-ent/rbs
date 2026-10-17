@@ -1,6 +1,7 @@
 // Client REST du module RBS (réservation de ressources) — cookies de session ENT, même origine.
 // Mêmes endpoints que la version AngularJS (backend Java inchangé).
 
+import { errorKey } from './bookingForm';
 import type { ShareEntry } from './rights';
 
 /** Type de ressource (ex. « Salles »). */
@@ -55,6 +56,10 @@ export interface Booking {
   is_periodic: boolean;
   /** Réservation mère de la série, pour une occurrence. */
   parent_booking_id?: number | null;
+  /** Série : une semaine sur n, jours (bitstring, index 0 = dimanche), nombre d'occurrences (0/absent si fin par date). */
+  periodicity?: number | null;
+  days?: string | null;
+  occurrences?: number | null;
   quantity: number;
 }
 
@@ -169,6 +174,23 @@ export interface ShareBatch {
   bookmarks: Record<string, string[]>;
 }
 
+/** Échec d'une écriture : `key` est la clé i18n du motif donné par le serveur (ou déduite du statut). */
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    public key: string,
+  ) {
+    super(key);
+  }
+}
+
+/** Comme `json`, mais l'erreur porte la cause métier (délai minimum, ressource indisponible, conflit…). */
+async function jsonStrict<T>(res: Response): Promise<T> {
+  if (!res.ok) throw new ApiError(res.status, errorKey(res.status, await res.text().catch(() => '')));
+  const text = await res.text();
+  return (text ? JSON.parse(text) : null) as T;
+}
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) throw new Error(String(res.status));
   const text = await res.text();
@@ -207,6 +229,47 @@ export const getResourceBookings = async (id: number): Promise<Booking[]> =>
 export const getBookingsInRange = async (startdate: string, enddate: string): Promise<Booking[]> =>
   json<Booking[]>(await fetch(`/rbs/bookings/all/${startdate}/${enddate}`, base));
 
+/** Modification d'une réservation (simple) ou d'une série entière (`periodic`). */
+export const updateBooking = async (resourceId: number, bookingId: number, body: CreateBookingBody | CreatePeriodicBookingBody, periodic: boolean): Promise<void> => {
+  await jsonStrict<unknown>(
+    await fetch(`/rbs/resource/${resourceId}/booking/${bookingId}${periodic ? '/periodic' : ''}`, {
+      ...base,
+      method: 'PUT',
+      headers: { ...jsonHeaders, ...xsrfHeader() },
+      body: JSON.stringify(body),
+    }),
+  );
+};
+
+/** Valideurs (utilisateurs ou groupes) d'un type de ressource. */
+export interface Moderator {
+  id?: string;
+  username: string;
+  type?: string;
+}
+export const getTypeModerators = async (typeId: number): Promise<Moderator[]> => json<Moderator[]>(await fetch(`/rbs/type/${typeId}/moderators`, base));
+
+/** Plage horaire prédéfinie d'un profil de créneaux d'établissement. */
+export interface ProfileSlotDto {
+  id?: number;
+  name: string;
+  startHour: string;
+  endHour: string;
+}
+export const getSlotProfileSlots = async (profileId: string): Promise<{ slots: ProfileSlotDto[] }> => json<{ slots: ProfileSlotDto[] }>(await fetch(`/rbs/slotprofiles/${profileId}/slots`, base));
+
+/** Réservations d'une ressource sur une période (bornes « yyyy-MM-ddTHH:mm:ss » en heure locale). */
+export const getResourceBookingsBetween = async (resourceId: number, startAt: string, endAt: string): Promise<Booking[]> =>
+  json<Booking[]>(await fetch(`/rbs/resource/${resourceId}/bookings?startAt=${encodeURIComponent(startAt)}&endAt=${encodeURIComponent(endAt)}`, base));
+
+/** Cours de l'emploi du temps déjà prévus dans une salle sur la période (relais serveur) : avertissement non bloquant. */
+export interface EdtCourse {
+  startDate: string;
+  endDate: string;
+}
+export const getRoomConflicts = async (structureId: string, startAt: string, endAt: string, room: string): Promise<EdtCourse[]> =>
+  json<EdtCourse[]>(await fetch(`/edt/structures/${structureId}/room-conflicts/${startAt}/${endAt}?room=${encodeURIComponent(room)}`, base));
+
 /** Toutes les occurrences d'une série (la liste n'en reçoit que celles de la période affichée). */
 export const getSeriesSlots = async (parentBookingId: number): Promise<Booking[]> =>
   json<Booking[]>(await fetch(`/rbs/bookings/full/slots/${parentBookingId}`, base));
@@ -232,7 +295,7 @@ export const saveRbsPreference = async (preference: Record<string, unknown>): Pr
 
 // ── Écriture ────────────────────────────────────────────────────────────────
 export const createBooking = async (resourceId: number, body: CreateBookingBody): Promise<Booking> =>
-  json<Booking>(
+  jsonStrict<Booking>(
     await fetch(`/rbs/resource/${resourceId}/booking`, {
       ...base,
       method: 'POST',
@@ -245,7 +308,7 @@ export const createPeriodicBooking = async (
   resourceId: number,
   body: CreatePeriodicBookingBody,
 ): Promise<Booking> =>
-  json<Booking>(
+  jsonStrict<Booking>(
     await fetch(`/rbs/resource/${resourceId}/booking/periodic`, {
       ...base,
       method: 'POST',
@@ -389,6 +452,11 @@ export const api = {
   getResourceBookings,
   getBookingsInRange,
   getSeriesSlots,
+  updateBooking,
+  getTypeModerators,
+  getSlotProfileSlots,
+  getResourceBookingsBetween,
+  getRoomConflicts,
   createBooking,
   createPeriodicBooking,
   getUnprocessedBookings,

@@ -135,7 +135,7 @@ export function Agenda() {
     const endDate = new Date(start);
     endDate.setHours(endDate.getHours() + 1);
     setSlotChoice(null);
-    navigate(`/resource/${resourceId}?start=${encodeURIComponent(toLocalInput(start))}&end=${encodeURIComponent(toLocalInput(endDate))}`);
+    navigate(`/booking/new?resource=${resourceId}&start=${encodeURIComponent(toLocalInput(start))}&end=${encodeURIComponent(toLocalInput(endDate))}`);
   };
 
   /** Grille horaire × jours (vues jour et semaine) : une colonne par jour, réservations positionnées à la minute. */
@@ -283,7 +283,7 @@ export function Agenda() {
       <div className="d-flex align-items-center justify-content-between mb-16 flex-wrap gap-8">
         <h1 className="m-0">{t('rbs.agenda.title', { defaultValue: 'Réservation de ressources' })}</h1>
         <div className="d-flex gap-8">
-          <Link to="/resources" className="btn btn-primary">
+          <Link to="/booking/new" className="btn btn-primary">
             {t('rbs.new.booking', { defaultValue: 'Nouvelle réservation' })}
           </Link>
           <Link to="/resources" className="btn btn-secondary">
