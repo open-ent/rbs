@@ -126,7 +126,8 @@ export function BookingForm() {
   const bookable = (r: Resource): boolean => {
     const rights = type ? rightsOn(type, ctx.me, r) : undefined;
     const rules = rulesOf(r);
-    return !!rights?.contrib && (r.is_available || (rules?.length ?? 0) > 0) && (!periodic || r.periodic_booking);
+    // Une ressource fermée par défaut n'est réservable que si elle a au moins une période de DISPONIBILITÉ.
+    return !!rights?.contrib && (r.is_available || (rules ?? []).some((x) => !x.is_unavailability)) && (!periodic || r.periodic_booking);
   };
   const bookableResources = typeResources.filter(bookable);
   const resource = resourceById.get(resourceId);

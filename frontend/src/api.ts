@@ -33,7 +33,20 @@ export interface Resource {
   quantity: number;
   min_delay?: number | null;
   max_delay?: number | null;
+  /** Capacité d'accueil d'une salle (places), distincte de la quantité. */
+  capacity?: number | null;
+  /** Matériel mobile (chariot, vidéoprojecteur) plutôt qu'une salle fixe. */
+  is_mobile?: boolean;
+  requires_key?: boolean;
+  equipment?: Equipment[] | null;
   shared?: ShareEntry[];
+}
+
+/** Équipement du catalogue d'un établissement (ex. « Vidéoprojecteur », « Tableau interactif »). */
+export interface Equipment {
+  id: number;
+  name: string;
+  school_id?: string;
 }
 
 /** Statut d'une réservation (convention backend rbs). */
@@ -104,12 +117,18 @@ export interface CreateTypeBody {
   validation: boolean;
   school_id: string;
   color: string;
+  category?: string;
+  extendcolor?: boolean;
+  slotprofile?: string | null;
 }
 /** Corps de mise à jour d'un type (school_id non requis). */
 export interface UpdateTypeBody {
   name: string;
   validation: boolean;
   color: string;
+  category?: string;
+  extendcolor?: boolean;
+  slotprofile?: string | null;
 }
 /** Champs éditables d'une ressource (création/màj ; cf. jsonschema/create|updateResource.json). */
 export interface ResourceInput {
@@ -120,6 +139,12 @@ export interface ResourceInput {
   validation?: boolean;
   quantity?: number;
   color?: string;
+  min_delay?: number;
+  max_delay?: number;
+  capacity?: number | null;
+  is_mobile?: boolean;
+  requires_key?: boolean;
+  equipmentIds?: number[];
 }
 
 /** Disponibilité (ou indisponibilité) d'une ressource. Réponse : dates ISO, heures « HH:mm:ss », jours en bitstring. */
@@ -352,23 +377,23 @@ export const deleteBooking = async (
 
 // ── Gestion des types ────────────────────────────────────────────────────────
 export const createType = async (body: CreateTypeBody): Promise<ResourceType> =>
-  json<ResourceType>(
+  jsonStrict<ResourceType>(
     await fetch('/rbs/type', { ...base, method: 'POST', headers: jsonHeaders, body: JSON.stringify(body) }),
   );
 
 export const updateType = async (id: number, body: UpdateTypeBody): Promise<ResourceType> =>
-  json<ResourceType>(
+  jsonStrict<ResourceType>(
     await fetch(`/rbs/type/${id}`, { ...base, method: 'PUT', headers: jsonHeaders, body: JSON.stringify(body) }),
   );
 
 export const deleteType = async (id: number): Promise<void> => {
-  const res = await fetch(`/rbs/type/${id}`, { ...base, method: 'DELETE' });
-  if (!res.ok && res.status !== 204) throw new Error(String(res.status));
+  const res = await fetch(`/rbs/type/${id}`, { ...base, method: 'DELETE', headers: xsrfHeader() });
+  if (!res.ok && res.status !== 204) throw new ApiError(res.status, errorKey(res.status, await res.text().catch(() => '')));
 };
 
 // ── Gestion des ressources ────────────────────────────────────────────────────
 export const createResource = async (typeId: number, body: ResourceInput): Promise<Resource> =>
-  json<Resource>(
+  jsonStrict<Resource>(
     await fetch(`/rbs/type/${typeId}/resource`, { ...base, method: 'POST', headers: jsonHeaders, body: JSON.stringify(body) }),
   );
 
@@ -382,7 +407,7 @@ export const updateResource = async (
   wasAvailable: boolean,
   body: ResourceInput,
 ): Promise<Resource> =>
-  json<Resource>(
+  jsonStrict<Resource>(
     await fetch(`/rbs/resource/${id}`, {
       ...base,
       method: 'PUT',
@@ -392,9 +417,43 @@ export const updateResource = async (
   );
 
 export const deleteResource = async (id: number): Promise<void> => {
-  const res = await fetch(`/rbs/resource/${id}`, { ...base, method: 'DELETE' });
-  if (!res.ok && res.status !== 204) throw new Error(String(res.status));
+  const res = await fetch(`/rbs/resource/${id}`, { ...base, method: 'DELETE', headers: xsrfHeader() });
+  if (!res.ok && res.status !== 204) throw new ApiError(res.status, errorKey(res.status, await res.text().catch(() => '')));
 };
+
+
+// ── Équipements, affectations, profils de créneaux ─────────────────────────────────────────────────────────────
+export const getEquipments = async (schoolId: string): Promise<Equipment[]> => (await json<Equipment[]>(await fetch(`/rbs/equipments/${schoolId}`, base))) ?? [];
+
+export const createEquipment = async (schoolId: string, name: string): Promise<Equipment> =>
+  jsonStrict<Equipment>(await fetch('/rbs/equipment', { ...base, method: 'POST', headers: { ...jsonHeaders, ...xsrfHeader() }, body: JSON.stringify({ school_id: schoolId, name }) }));
+
+/** Associe exactement ces équipements à la ressource (remplace la liste précédente). */
+export const setResourceEquipment = async (resourceId: number, equipmentIds: number[]): Promise<void> => {
+  await jsonStrict<unknown>(await fetch(`/rbs/resource/${resourceId}/equipment`, { ...base, method: 'PUT', headers: { ...jsonHeaders, ...xsrfHeader() }, body: JSON.stringify({ equipmentIds }) }));
+};
+
+/** Ressource désignée dans une affectation (matériel mobile ↔ salle) : identifiant et nom suffisent. */
+export interface AssignedResource {
+  id: number;
+  name: string;
+}
+/** Salles de l'établissement où un matériel mobile peut être affecté (le matériel lui-même exclu). */
+export const getAssignmentCandidates = async (schoolId: string, excludeResourceId: number): Promise<AssignedResource[]> =>
+  (await json<AssignedResource[]>(await fetch(`/rbs/resources/candidates/${schoolId}/${excludeResourceId}`, base))) ?? [];
+export const getAssignments = async (resourceId: number): Promise<AssignedResource[]> => (await json<AssignedResource[]>(await fetch(`/rbs/resource/${resourceId}/assignments`, base))) ?? [];
+export const setAssignments = async (resourceId: number, resourceIds: number[]): Promise<void> => {
+  await jsonStrict<unknown>(await fetch(`/rbs/resource/${resourceId}/assignments`, { ...base, method: 'PUT', headers: { ...jsonHeaders, ...xsrfHeader() }, body: JSON.stringify({ resourceIds }) }));
+};
+
+/** Profils de créneaux d'un établissement (annuaire) : `_id` est ce que porte un type (`slotprofile`). */
+export interface SlotProfileDto {
+  _id: string;
+  name: string;
+  slots?: unknown[];
+}
+export const getSchoolSlotProfiles = async (schoolId: string): Promise<SlotProfileDto[]> =>
+  (await json<SlotProfileDto[]>(await fetch(`/rbs/slotprofiles/schools/${schoolId}`, base))) ?? [];
 
 // ── Export ────────────────────────────────────────────────────────────────────
 /** Corps de POST /rbs/bookings/export (cf. jsonschema/exportBookings.json). Dates « yyyy-MM-dd ». */
@@ -420,13 +479,30 @@ export const exportBookings = async (body: ExportBody): Promise<Blob> => {
 };
 
 // ── Disponibilités ────────────────────────────────────────────────────────────
-export const getResourceAvailability = async (resourceId: number): Promise<Availability[]> =>
-  json<Availability[]>(await fetch(`/rbs/resource/${resourceId}/availability`, base));
+/**
+ * Périodes d'une ressource : le serveur ne renvoie qu'un mode à la fois (`is_unavailability`, faux par défaut), on lit
+ * donc les disponibilités ET les indisponibilités. Ignorer les indisponibilités fausserait la quantité disponible.
+ */
+export const getResourceAvailability = async (resourceId: number): Promise<Availability[]> => {
+  const [availabilities, unavailabilities] = await Promise.all([false, true].map(async (flag) => (await json<Availability[]>(await fetch(`/rbs/resource/${resourceId}/availability?is_unavailability=${flag}`, base))) ?? []));
+  return [...availabilities, ...unavailabilities];
+};
 
 export const createAvailability = async (resourceId: number, body: CreateAvailabilityBody): Promise<Availability> =>
   json<Availability>(
     await fetch(`/rbs/resource/${resourceId}/availability`, { ...base, method: 'POST', headers: jsonHeaders, body: JSON.stringify(body) }),
   );
+
+export const updateAvailability = async (resourceId: number, availabilityId: number, body: CreateAvailabilityBody): Promise<Availability> =>
+  jsonStrict<Availability>(
+    await fetch(`/rbs/resource/${resourceId}/availability/${availabilityId}`, { ...base, method: 'PUT', headers: { ...jsonHeaders, ...xsrfHeader() }, body: JSON.stringify(body) }),
+  );
+
+/** Supprime toutes les périodes d'un type (indisponibilités ou disponibilités) : utile quand la ressource change de mode. */
+export const deleteAllAvailabilities = async (resourceId: number, areUnavailabilities: boolean): Promise<void> => {
+  const res = await fetch(`/rbs/resource/${resourceId}/availability/all/${areUnavailabilities}`, { ...base, method: 'DELETE', headers: xsrfHeader() });
+  if (!res.ok && res.status !== 204) throw new Error(String(res.status));
+};
 
 export const deleteAvailability = async (resourceId: number, availabilityId: number): Promise<void> => {
   const res = await fetch(`/rbs/resource/${resourceId}/availability/${availabilityId}`, { ...base, method: 'DELETE' });
@@ -457,6 +533,13 @@ export const api = {
   getSlotProfileSlots,
   getResourceBookingsBetween,
   getRoomConflicts,
+  getEquipments,
+  createEquipment,
+  setResourceEquipment,
+  getAssignmentCandidates,
+  getAssignments,
+  setAssignments,
+  getSchoolSlotProfiles,
   createBooking,
   createPeriodicBooking,
   getUnprocessedBookings,
@@ -470,6 +553,8 @@ export const api = {
   deleteResource,
   getResourceAvailability,
   createAvailability,
+  updateAvailability,
+  deleteAllAvailabilities,
   deleteAvailability,
   getTypeShare,
   shareTypeBatch,
