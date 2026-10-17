@@ -840,7 +840,7 @@ public class BookingServiceSqlImpl extends SqlCrudService implements BookingServ
 			processValues.add(bId).add(bId).add(bId).add(rId).add(bId);
 		}
 
-		StringBuilder returningClause = 		// booking_reason inclus pour la même raison que createBooking (cf. commentaire là-bas).
+		// booking_reason inclus pour la même raison que createBooking (cf. commentaire là-bas).
 		StringBuilder returningClause = new StringBuilder(" RETURNING id, status, owner, booking_reason, ")
 				.append(" to_char(start_date AT TIME ZONE 'UTC' AT TIME ZONE 'EUROPE/PARIS', '").append(DATE_FORMAT).append("') AS start_date,")
 				.append(" to_char(end_date AT TIME ZONE 'UTC' AT TIME ZONE 'EUROPE/PARIS', '").append(DATE_FORMAT).append("') AS end_date");
