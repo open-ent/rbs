@@ -551,5 +551,14 @@
   "to": "to",
   "type.form.validation.required": "Booking requests must be approved",
   "rbs.moderation.title": "Moderation",
-  "rbs.edt.room.conflict.warning": "A lesson is already planned in {{room}} on this slot, according to the timetable."
+  "rbs.edt.room.conflict.warning": "A lesson is already planned in {{room}} on this slot, according to the timetable.",
+  "rbs.booking.periodic": "Recurring booking",
+  "rbs.agenda.today": "Today",
+  "rbs.agenda.pickresource": "Tick a resource in the list to book it.",
+  "rbs.agenda.book.slot": "Book on [[date]] at [[hour]]:00",
+  "rbs.agenda.book.title": "Book this slot",
+  "rbs.agenda.book.resource": "Resource to book",
+  "rbs.agenda.book.go": "Book",
+  "rbs.bookings.more.link": "show more",
+  "rbs.agenda.more.title": "[[count]] bookings — [[day]]"
 }

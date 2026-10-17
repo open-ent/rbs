@@ -53,6 +53,8 @@ export interface Booking {
   moderator_id?: string | null;
   refusal_reason?: string | null;
   is_periodic: boolean;
+  /** Réservation mère de la série, pour une occurrence. */
+  parent_booking_id?: number | null;
   quantity: number;
 }
 

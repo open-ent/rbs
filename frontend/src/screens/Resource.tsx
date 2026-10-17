@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FormEvent, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 
 import { api, Slot } from '../api';
 import { dayShort } from '../locale';
@@ -21,6 +21,8 @@ const weekDayOptions = () =>
 /** Détail d'une ressource : infos, liste des réservations, création (simple ou périodique). */
 export function Resource() {
   const { resourceId = '' } = useParams();
+  // Créneau cliqué dans le calendrier : `#/resource/12?start=2026-10-20T09:00&end=2026-10-20T10:00` préremplit le formulaire.
+  const [params] = useSearchParams();
   const id = Number(resourceId);
   const { t } = useTranslation(['rbs', 'common']);
   const qc = useQueryClient();
@@ -41,8 +43,8 @@ export function Resource() {
 
   // Champs communs
   const [reason, setReason] = useState('');
-  const [start, setStart] = useState('');
-  const [end, setEnd] = useState('');
+  const [start, setStart] = useState(params.get('start') ?? '');
+  const [end, setEnd] = useState(params.get('end') ?? '');
   const [quantity, setQuantity] = useState(1);
   const [formError, setFormError] = useState('');
   const [showAvailability, setShowAvailability] = useState(false);

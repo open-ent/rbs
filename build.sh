@@ -53,7 +53,7 @@ clean () {
 
 install () {
   buildReact
-   docker compose run --rm maven mvn $MVN_OPTS install -DskipTests
+   docker compose run --rm maven mvn $MVN_OPTS install -DskipTests -Dmaven.test.skip=true
  }
 
  test () {

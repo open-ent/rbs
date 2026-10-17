@@ -25,6 +25,10 @@ export function statusLabel(status: number): string {
       return 'Validée';
     case BOOKING_STATUS.REFUSED:
       return 'Refusée';
+    case 4:
+      return 'Suspendue';
+    case 9:
+      return 'Partiellement validée';
     case BOOKING_STATUS.CREATED:
     default:
       return 'En attente';
@@ -38,6 +42,10 @@ export function statusBadgeClass(status: number): string {
       return 'badge bg-success';
     case BOOKING_STATUS.REFUSED:
       return 'badge bg-danger';
+    case 4:
+      return 'badge bg-secondary';
+    case 9:
+      return 'badge bg-info';
     case BOOKING_STATUS.CREATED:
     default:
       return 'badge bg-warning';

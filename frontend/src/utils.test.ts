@@ -22,6 +22,10 @@ describe('statusLabel', () => {
     expect(statusLabel(BOOKING_STATUS.REFUSED)).toBe('Refusée');
     expect(statusLabel(BOOKING_STATUS.CREATED)).toBe('En attente');
   });
+  it('mappe suspendue et partielle', () => {
+    expect(statusLabel(4)).toBe('Suspendue');
+    expect(statusLabel(9)).toBe('Partiellement validée');
+  });
   it('replie sur « En attente » pour un statut inconnu', () => {
     expect(statusLabel(99)).toBe('En attente');
   });

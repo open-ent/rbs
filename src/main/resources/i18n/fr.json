@@ -551,5 +551,14 @@
   "to": "à",
   "type.form.validation.required": "Les demandes de réservation doivent être validées",
   "rbs.moderation.title": "Modération",
-  "rbs.edt.room.conflict.warning": "Un cours est déjà prévu dans {{room}} sur ce créneau, d'après l'emploi du temps."
+  "rbs.edt.room.conflict.warning": "Un cours est déjà prévu dans {{room}} sur ce créneau, d'après l'emploi du temps.",
+  "rbs.booking.periodic": "Réservation périodique",
+  "rbs.agenda.today": "Aujourd'hui",
+  "rbs.agenda.pickresource": "Cochez une ressource dans la liste pour la réserver.",
+  "rbs.agenda.book.slot": "Réserver le [[date]] à [[hour]]h",
+  "rbs.agenda.book.title": "Réserver ce créneau",
+  "rbs.agenda.book.resource": "Ressource à réserver",
+  "rbs.agenda.book.go": "Réserver",
+  "rbs.bookings.more.link": "voir plus",
+  "rbs.agenda.more.title": "[[count]] réservations — [[day]]"
 }
