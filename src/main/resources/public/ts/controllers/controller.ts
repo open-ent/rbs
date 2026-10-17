@@ -1,5 +1,5 @@
 import {_, Behaviours, idiom as lang, ng, notify, template} from 'entcore';
-import http from 'axios';
+import {http} from 'entcore-toolkit';
 import moment from '../moment';
 import {isBookingSlot, RBS} from '../models/models';
 import {BookingUtil} from "../utilities/booking.util";

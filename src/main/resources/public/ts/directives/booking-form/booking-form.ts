@@ -1,5 +1,5 @@
 import {_, ng, moment, notify, idiom as lang} from 'entcore';
-import http from 'axios';
+import {http} from 'entcore-toolkit';
 import {ROOTS} from "../../core/const/roots.const";
 import {RBS} from "../../models/models";
 import {DateUtils} from "../../utilities/date.util";

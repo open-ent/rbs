@@ -1,6 +1,6 @@
 import {BookingService, IBookingService} from "../services";
 import {angular, idiom, model} from "entcore";
-import http from "axios";
+import {http} from "entcore-toolkit";
 import {Booking, Bookings, IBookingResponse} from "../models/booking.model";
 import {Resource} from "../models/resource.model";
 import {ResourceType, Structure} from "../models/resource-type.model";
