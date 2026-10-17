@@ -116,6 +116,9 @@ export function ShareDialog({ typeId, typeName, onClose }: { typeId: number; typ
 
       {shareQuery.data && (
         <>
+          <p style={{ fontStyle: 'italic', color: '#767676' }} data-share-help>
+            {t('rbs.share.levels.help', { defaultValue: 'Lecture : voir le type et ses ressources. Réservation : réserver. Validation : valider ou refuser les demandes. Gestion : modifier le type et ses ressources, et le partager.' })}
+          </p>
           <div className="mb-16 position-relative">
             <input
               type="text"
