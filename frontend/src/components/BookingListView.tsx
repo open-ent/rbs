@@ -2,10 +2,12 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { api, Booking } from '../api';
+import { api, Booking, Resource } from '../api';
+import { canProcessSelection, deleteTargets, editTarget, planDeletion, processable } from '../bookingActions';
 import { buildRows, canAct, isPast, nextSort, Row, SortKey, sortRows, toggleAll, toggleRow } from '../bookingList';
 import { isPeriodic } from '../calendar';
 import { formatDateTime } from '../utils';
+import { ActionDialog, ActionKind } from './ActionDialogs';
 import { StatusIcon } from './CalendarParts';
 
 interface Props {
@@ -21,6 +23,11 @@ interface Props {
   selected: Set<number>;
   onSelect: (next: Set<number>) => void;
   onOpen: (b: Booking, date?: string) => void;
+  resourceOf: (b: Booking) => Resource | undefined;
+  /** Peut-on retoucher cette réservation lors du traitement automatique après une suppression ? */
+  canTreat: (b: Booking) => boolean;
+  /** Ouvre le formulaire de modification d'une réservation. */
+  onEdit: (b: Booking) => void;
 }
 
 /** Colonnes triables, dans l'ordre d'affichage : mêmes en-têtes que l'IHM AngularJS. */
@@ -38,7 +45,7 @@ const COLUMNS: Array<{ key: SortKey; label: string; defaultValue: string }> = [
  * coche ses occurrences à venir ; les réservations terminées et celles sur lesquelles on n'a aucun droit ne
  * s'y prêtent pas), clic sur une ligne → détail.
  */
-export function BookingListView({ bookings, keep, resourceName, colorOf, userId, rightsOf, selected, onSelect, onOpen }: Props) {
+export function BookingListView({ bookings, keep, resourceName, colorOf, userId, rightsOf, selected, onSelect, onOpen, resourceOf, canTreat, onEdit }: Props) {
   const { t } = useTranslation(['rbs', 'common']);
   const [sort, setSort] = useState<{ key: SortKey; reverse: boolean }>({ key: 'start_date', reverse: false });
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -46,6 +53,17 @@ export function BookingListView({ bookings, keep, resourceName, colorOf, userId,
   const [loaded, setLoaded] = useState<Map<number, Booking[]>>(new Map());
 
   const rows = useMemo(() => sortRows(buildRows(bookings, loaded, keep), sort.key, sort.reverse, resourceName), [bookings, loaded, keep, sort, resourceName]);
+
+  const [dialog, setDialog] = useState<null | { kind: ActionKind; bookings: Booking[]; current?: Booking; context?: Booking[] }>(null);
+
+  /** Toutes les réservations affichées, mères, simples et occurrences connues : ce que la sélection désigne. */
+  const pool = useMemo(() => rows.flatMap((r) => [r.booking, ...(loaded.get(r.booking.id) ?? r.slots)]), [rows, loaded]);
+  const chosen = pool.filter((b) => selected.has(b.id));
+  const everyCanAct = chosen.length > 0 && chosen.every((b) => canAct(b, userId, rightsOf(b)));
+  const everyProcess = chosen.length > 0 && chosen.every((b) => rightsOf(b).process);
+  const editable = editTarget(selected, pool, (b) => !!resourceOf(b)?.is_available);
+  const plan = planDeletion(selected, pool);
+  const toProcess = processable(selected, pool);
 
   const selectable = (row: Row) => !isPast(row.booking) && canAct(row.booking, userId, rightsOf(row.booking));
   const slotSelectable = (row: Row, slot: Booking) => !isPast(slot) && canAct(row.booking, userId, rightsOf(row.booking));
@@ -83,8 +101,59 @@ export function BookingListView({ bookings, keep, resourceName, colorOf, userId,
     </>
   );
 
+  const openDelete = () => {
+    // Une seule occurrence cochée sans sa série : on propose « cette occurrence » ou « tout supprimer » à partir d'elle.
+    if (plan.wholes.length === 0 && plan.occurrences.length === 1) {
+      const current = plan.occurrences[0];
+      setDialog({ kind: 'delete-occurrence', bookings: [current], current, context: pool.filter((b) => b.parent_booking_id === current.parent_booking_id) });
+    } else setDialog({ kind: 'delete', bookings: deleteTargets(plan) });
+  };
+
   return (
     <div style={{ overflowX: 'auto' }}>
+      {dialog && (
+        <ActionDialog
+          kind={dialog.kind}
+          bookings={dialog.bookings}
+          current={dialog.current}
+          context={dialog.context}
+          resourceName={resourceName}
+          colorOf={colorOf}
+          resourceOf={resourceOf}
+          canTreat={canTreat}
+          onClose={() => setDialog(null)}
+          onDone={() => {
+            setDialog(null);
+            onSelect(new Set());
+            setLoaded(new Map());
+            setExpanded(new Set());
+          }}
+        />
+      )}
+      {selected.size > 0 && (
+        <div className="d-flex align-items-center gap-8 flex-wrap mb-8" role="toolbar" data-selection-actions aria-label={t('rbs.list.actions', { defaultValue: 'Actions sur la sélection' })}>
+          {everyCanAct && (
+            <>
+              <button type="button" className="btn btn-secondary btn-sm" disabled={!editable} onClick={() => editable && onEdit(editable)}>
+                {t('rbs.list.edit', { defaultValue: 'Modifier' })}
+              </button>
+              <button type="button" className="btn btn-secondary btn-sm" disabled={plan.wholes.length + plan.occurrences.length === 0} onClick={openDelete}>
+                {t('rbs.list.remove', { defaultValue: 'Supprimer' })}
+              </button>
+            </>
+          )}
+          {everyProcess && (
+            <>
+              <button type="button" className="btn btn-secondary btn-sm" disabled={!canProcessSelection(selected, pool)} onClick={() => setDialog({ kind: 'validate', bookings: toProcess })}>
+                {t('rbs.booking.validate', { defaultValue: 'Valider' })}
+              </button>
+              <button type="button" className="btn btn-secondary btn-sm" disabled={!canProcessSelection(selected, pool)} onClick={() => setDialog({ kind: 'refuse', bookings: toProcess })}>
+                {t('rbs.booking.refuse', { defaultValue: 'Refuser' })}
+              </button>
+            </>
+          )}
+        </div>
+      )}
       <table className="table table-bordered mb-0" data-booking-list>
         <thead>
           <tr>

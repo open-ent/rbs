@@ -48,6 +48,8 @@ export function Root() {
               ))}
             </nav>
             <Outlet />
+            {/* Marge basse (un `py-*` du thème l'emporterait sur un padding) : le bouton flottant de bascule d'interface occupe le coin bas droit, les actions de bas de page doivent pouvoir défiler au-dessus. */}
+            <div aria-hidden style={{ height: 88 }} />
           </div>
         </div>
       </Layout>

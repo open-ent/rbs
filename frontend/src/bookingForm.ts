@@ -226,6 +226,18 @@ export function quantityAvailableAt(occ: Occurrence, resource: ResourceQuantity,
   return free > 0 ? free : 0;
 }
 
+/**
+ * Solde du créneau d'une réservation EXISTANTE : quantité de la ressource moins celle prise par les AUTRES réservations
+ * et moins la sienne. Négatif = la ressource n'y suffit plus (ex. quantité réduite, indisponibilité ajoutée) : c'est
+ * ce qui déclenche la suspension. `exceptId` : une réservation en cours de suppression.
+ * (L'AngularJS ne retranchait pas la quantité de la réservation elle-même : deux réservations d'une unité sur une
+ * ressource ramenée à une unité n'étaient jamais vues en conflit.)
+ */
+export function quantityBalanceAt(booking: Booking, resource: ResourceQuantity, rules: Availability[], bookings: Booking[], exceptId?: number, now = new Date()): number {
+  const occ = asOccurrence(booking);
+  return resourceQuantityAt(occ, resource, rules, now) - bookingsQuantityUsed(occ, bookings.filter((b) => b.id !== booking.id), exceptId, now) - booking.quantity;
+}
+
 /** Pour une série, la plus petite quantité disponible parmi ses occurrences. */
 export function seriesQuantityAvailable(occurrences: Occurrence[], resource: ResourceQuantity, rules: Availability[], bookings: Booking[], exceptId?: number, now = new Date()): number {
   if (occurrences.length === 0) return 0;

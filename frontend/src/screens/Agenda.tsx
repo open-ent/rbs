@@ -11,6 +11,7 @@ import { ResourceTree } from '../components/ResourceTree';
 import { useRbsContext } from '../hooks/useRbsContext';
 import { useResourceTree } from '../hooks/useResourceTree';
 import { dateLocale } from '../locale';
+import { canAct } from '../bookingList';
 import { rightsOn } from '../rights';
 import { startOfWeek, weekDays, yyyymmdd } from '../utils';
 import { ExportDialog } from './ExportDialog';
@@ -31,15 +32,15 @@ const MONTH_MAX = 3;
  * info-bulle au survol, clic sur une réservation → détail, clic sur un créneau libre → nouvelle réservation, case
  * du mois trop remplie → « voir plus ». Filtres « Mes réservations » et, pour qui valide, « À traiter ».
  */
-export function Agenda() {
+export function Agenda({ moderation = false }: { moderation?: boolean } = {}) {
   const { t } = useTranslation(['rbs', 'common']);
   const navigate = useNavigate();
   const ctx = useRbsContext();
-  const [view, setView] = useState<View>('week');
+  const [view, setView] = useState<View>(moderation ? 'list' : 'week');
   const [cursor, setCursor] = useState(() => new Date());
   const [exporting, setExporting] = useState(false);
   const [mine, setMine] = useState(false);
-  const [toProcess, setToProcess] = useState(false);
+  const [toProcess, setToProcess] = useState(moderation);
   const [more, setMore] = useState<{ day: Date; items: Booking[] } | null>(null);
   const [slotChoice, setSlotChoice] = useState<Date | null>(null);
   const [notice, setNotice] = useState('');
@@ -65,7 +66,7 @@ export function Agenda() {
   const tree = useResourceTree();
   const bookingsQuery = useQuery({ queryKey: ['rbs', 'agenda', start, end], queryFn: () => api.getBookingsInRange(start, end) });
   // Demandes que l'usager peut traiter, y compris hors de la période affichée côté serveur : on ne garde que celles visibles.
-  const unprocessedQuery = useQuery({ queryKey: ['rbs', 'unprocessed'], queryFn: api.getUnprocessedBookings, enabled: ctx.can.validator && toProcess });
+  const unprocessedQuery = useQuery({ queryKey: ['rbs', 'unprocessed'], queryFn: api.getUnprocessedBookings, enabled: ctx.can.validator && (toProcess || moderation) });
 
   const resources = useMemo(() => new Map(tree.resources.map((r) => [r.id, r])), [tree.resources]);
   const colors = useMemo(() => typeColors(tree.types), [tree.types]);
@@ -74,7 +75,9 @@ export function Agenda() {
 
   /** Filtres de la barre (« mes réservations », « à traiter »). */
   const passes = (b: Booking) => (!mine || b.owner === ctx.me.userId) && (!toProcess || unprocessedIds.has(b.id));
-  const inSelection = (bookingsQuery.data ?? []).filter((b) => selected.has(b.resource_id));
+  // Modération : toutes les demandes à traiter, sans fenêtre de dates (comme l'AngularJS) ; sinon la période affichée.
+  const source = moderation ? (unprocessedQuery.data ?? []) : (bookingsQuery.data ?? []);
+  const inSelection = source.filter((b) => selected.has(b.resource_id));
   // Le calendrier ne dessine jamais la mère d'une série (elle couvre toute la période) ; la liste la montre.
   const bookings = inSelection.filter((b) => !isSeriesParent(b) && passes(b));
   const nameOf = (b: Booking) => resources.get(b.resource_id)?.name ?? '';
@@ -281,7 +284,7 @@ export function Agenda() {
         />
       )}
       <div className="d-flex align-items-center justify-content-between mb-16 flex-wrap gap-8">
-        <h1 className="m-0">{t('rbs.agenda.title', { defaultValue: 'Réservation de ressources' })}</h1>
+        <h1 className="m-0">{moderation ? t('rbs.moderation.title', { defaultValue: 'Modération' }) : t('rbs.agenda.title', { defaultValue: 'Réservation de ressources' })}</h1>
         <div className="d-flex gap-8">
           <Link to="/booking/new" className="btn btn-primary">
             {t('rbs.new.booking', { defaultValue: 'Nouvelle réservation' })}
@@ -324,6 +327,7 @@ export function Agenda() {
           {/* Barre : vue + filtres + navigation */}
           <div className="d-flex align-items-center justify-content-between mb-12 flex-wrap gap-8">
             <div className="d-flex align-items-center gap-12 flex-wrap">
+              {!moderation && (
               <div className="btn-group" role="group" aria-label={t('rbs.agenda.views', { defaultValue: 'Vues' })}>
                 {(['day', 'week', 'month', 'list'] as View[]).map((v) => (
                   <button key={v} type="button" className={`btn btn-sm ${view === v ? 'btn-primary' : 'btn-secondary'}`} aria-pressed={view === v} onClick={() => setView(v)}>
@@ -331,6 +335,7 @@ export function Agenda() {
                   </button>
                 ))}
               </div>
+              )}
               <label className="d-flex align-items-center gap-4" style={{ fontSize: 13 }}>
                 <input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} />
                 {t('rbs.selector.mine', { defaultValue: 'Mes réservations' })}
@@ -342,7 +347,7 @@ export function Agenda() {
                 </label>
               )}
             </div>
-            <div className="d-flex align-items-center gap-12">
+            {!moderation && <div className="d-flex align-items-center gap-12">
               <button type="button" className="btn btn-secondary btn-sm" onClick={() => setCursor(new Date())}>
                 {t('rbs.agenda.today', { defaultValue: "Aujourd'hui" })}
               </button>
@@ -353,7 +358,7 @@ export function Agenda() {
               <button type="button" className="btn btn-secondary btn-sm" onClick={() => shift(1)} aria-label={shiftLabels[view][1]}>
                 →
               </button>
-            </div>
+            </div>}
           </div>
 
           {notice && (
@@ -368,7 +373,7 @@ export function Agenda() {
             </div>
           )}
 
-          {view === 'list' && (
+          {view === 'list' && !moderation && (
             <div className="d-flex align-items-center gap-12 flex-wrap mb-8" style={{ fontSize: 13 }}>
               <label className="d-flex align-items-center gap-4">
                 <input
@@ -411,6 +416,9 @@ export function Agenda() {
               selected={selection}
               onSelect={setSelection}
               onOpen={open}
+              resourceOf={(b) => resources.get(b.resource_id)}
+              canTreat={(b) => canAct(b, ctx.me.userId, rightsOfBooking(b))}
+              onEdit={(b) => navigate(`/booking/${b.id}/edit`)}
             />
           )}
           {view === 'day' && grid([cursor])}

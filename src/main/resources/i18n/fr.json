@@ -573,5 +573,10 @@
   "rbs.booking.notfound": "Cette réservation n'existe plus ou vous n'y avez pas accès.",
   "rbs.booking.from": "de",
   "rbs.booking.to": "à",
-  "rbs.booking.days": "Jours"
+  "rbs.booking.days": "Jours",
+  "rbs.list.actions": "Actions sur la sélection",
+  "rbs.list.edit": "Modifier",
+  "rbs.list.remove": "Supprimer",
+  "rbs.booking.validate.multi": "Valider les [[count]] réservations sélectionnées ?",
+  "rbs.booking.refuse.multi": "Refuser les [[count]] réservations sélectionnées ?"
 }

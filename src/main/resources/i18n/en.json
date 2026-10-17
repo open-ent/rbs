@@ -573,5 +573,10 @@
   "rbs.booking.notfound": "This booking no longer exists or you do not have access to it.",
   "rbs.booking.from": "from",
   "rbs.booking.to": "to",
-  "rbs.booking.days": "Days"
+  "rbs.booking.days": "Days",
+  "rbs.list.actions": "Actions on the selection",
+  "rbs.list.edit": "Edit",
+  "rbs.list.remove": "Delete",
+  "rbs.booking.validate.multi": "Validate the [[count]] selected bookings?",
+  "rbs.booking.refuse.multi": "Refuse the [[count]] selected bookings?"
 }
