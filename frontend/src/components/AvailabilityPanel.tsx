@@ -68,7 +68,7 @@ export function AvailabilityPanel({ resource, isAvailable, quantity, canTreat }:
         await api.deleteAvailability(resource.id, action.rule.id);
       }
       await refresh();
-      await treatResource({ ...resource, quantity: model.quantity, is_available: isAvailable }, canTreat).catch(() => 0);
+      await treatResource({ ...resource, quantity: model.quantity, is_available: isAvailable }, canTreat);
       await refresh();
       setPending(null);
       reset();

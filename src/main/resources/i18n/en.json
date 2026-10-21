@@ -314,6 +314,8 @@
   "rbs.header.booking.picked": "2 - Slot: ",
   "rbs.header.periodic.pick": "3 - Set the recurrence",
   "rbs.header.periodic.picked": "3 - Recurrence: ",
+  "rbs.roomSchedule.error": "Unable to check availability: the resource may not be free.",
+  "rbs.edt.room.conflict.error": "The timetable check failed: a class may already occupy this room at this time.",
   "rbs.roomSchedule.menu": "Availability",
   "rbs.roomSchedule.check": "Check when a resource is free",
   "rbs.roomSchedule.title": "Availability of a resource",

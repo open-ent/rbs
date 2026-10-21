@@ -314,6 +314,8 @@
   "rbs.header.booking.picked": "2 - Créneau : ",
   "rbs.header.periodic.pick": "3 - Configurer la périodicité",
   "rbs.header.periodic.picked": "3 - Périodicité : ",
+  "rbs.roomSchedule.error": "Impossible de vérifier les disponibilités : la ressource n'est peut-être pas libre.",
+  "rbs.edt.room.conflict.error": "La vérification avec l'emploi du temps a échoué : un cours peut déjà occuper cette salle sur ce créneau.",
   "rbs.roomSchedule.menu": "Disponibilité",
   "rbs.roomSchedule.check": "Vérifier les disponibilités de la ressource",
   "rbs.roomSchedule.title": "Disponibilité d'une ressource",

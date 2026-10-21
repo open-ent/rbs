@@ -127,7 +127,7 @@ export function ResourceForm({ type: initialType, manageable, resource, structur
       if (editing) {
         saved = await api.updateResource(resource!.id, type.id, resource!.is_available, body);
         // Passer de disponible à indisponible (ou l'inverse) rend caduques les périodes de l'ancien mode.
-        if (resource!.is_available !== values.isAvailable) await api.deleteAllAvailabilities(resource!.id, !values.isAvailable).catch(() => undefined);
+        if (resource!.is_available !== values.isAvailable) await api.deleteAllAvailabilities(resource!.id, !values.isAvailable);
         else {
           const kept = (rules.data ?? []).filter((r) => r.is_unavailability === values.isAvailable && r.quantity > body.quantity!);
           for (const r of kept) await api.updateAvailability(resource!.id, r.id, availabilityBody(resource!.id, r.is_unavailability, { ...fromAvailability(r), quantity: body.quantity! }, Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris')).catch(() => undefined);
@@ -136,7 +136,7 @@ export function ResourceForm({ type: initialType, manageable, resource, structur
         saved = await api.createResource(type.id, body);
       }
       await qc.invalidateQueries({ queryKey: ['rbs'] });
-      if (editing) await treatResource({ ...saved, ...resource!, quantity: body.quantity ?? 1, is_available: values.isAvailable, validation: values.validation }, canTreat).catch(() => 0);
+      if (editing) await treatResource({ ...saved, ...resource!, quantity: body.quantity ?? 1, is_available: values.isAvailable, validation: values.validation }, canTreat);
       await qc.invalidateQueries({ queryKey: ['rbs'] });
       onClose();
     } catch (e) {

@@ -271,8 +271,8 @@ export function BookingForm() {
     queryKey: ['rbs', 'mini-schedule', structureId, resourceId, dayValue(weekStart)],
     queryFn: async () => {
       const [courses, bookings] = await Promise.all([
-        structureId && structureId !== 'DETACHED' && resource ? api.getRoomConflicts(structureId, localIso(weekStart), localIso(weekEnd), resource.name).catch(() => []) : Promise.resolve([]),
-        api.getResourceBookingsBetween(resourceId, localIso(weekStart), localIso(weekEnd)).catch(() => [] as Booking[]),
+        structureId && structureId !== 'DETACHED' && resource ? api.getRoomConflicts(structureId, localIso(weekStart), localIso(weekEnd), resource.name): Promise.resolve([]),
+        api.getResourceBookingsBetween(resourceId, localIso(weekStart), localIso(weekEnd)),
       ]);
       const rows = [
         ...courses.map((c) => ({ source: 'edt' as const, start: new Date(c.startDate.replace(' ', 'T')), end: new Date(c.endDate.replace(' ', 'T')), label: t('rbs.roomSchedule.source.edt', { defaultValue: 'Emploi du temps' }) })),
@@ -281,6 +281,7 @@ export function BookingForm() {
       return rows.sort((a, b) => a.start.getTime() - b.start.getTime());
     },
     enabled: showSchedule && !!resourceId,
+    retry: false,
   });
 
   // ── Résumés ───────────────────────────────────────────────────────────────────────────────────────────
@@ -569,6 +570,11 @@ export function BookingForm() {
               />
             </FieldRow>
 
+            {edtConflict.isError && (
+              <div className="alert alert-warning" role="alert" data-edt-conflict-error>
+                {t('rbs.edt.room.conflict.error', { defaultValue: "La vérification avec l'emploi du temps a échoué : un cours peut déjà occuper cette salle sur ce créneau." })}
+              </div>
+            )}
             {hasEdtConflict && (
               <div className="alert alert-warning" data-edt-conflict>
                 {t('rbs.edt.room.conflict.warning', { defaultValue: 'Un cours est déjà prévu dans [[room]] sur ce créneau, d\'après l\'emploi du temps.', room: resource.name }).replace('{{room}}', resource.name)}
@@ -581,6 +587,7 @@ export function BookingForm() {
               {showSchedule && (
                 <div data-mini-schedule className="mt-8">
                   {schedule.isLoading && <p className="text-muted">{t('rbs.loading', { defaultValue: 'Chargement…' })}</p>}
+                  {schedule.isError && <p className="text-danger" role="alert" data-schedule-error>{t('rbs.roomSchedule.error', { defaultValue: "Impossible de vérifier les disponibilités : la ressource n'est peut-être pas libre." })}</p>}
                   {schedule.data && schedule.data.length === 0 && <p className="text-muted">{t('rbs.roomSchedule.empty', { defaultValue: 'Aucun créneau occupé cette semaine pour cette ressource.' })}</p>}
                   {schedule.data && schedule.data.length > 0 && (
                     <table className="table table-sm">
