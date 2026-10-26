@@ -7,3 +7,14 @@
 .btn-link:focus {
   color: var(--bs-link-hover-color, #0a58ca);
 }
+
+/* Entrée sélectionnée (onglets de navigation, sélecteur de vue de l'agenda) : même bleu que dans Présences.
+   Le thème colore .btn-primary et .btn-secondary presque à l'identique : sans cela la sélection ne ressort pas.
+   #1f7fa5 garde un contraste de 4,5:1 avec le texte blanc. */
+nav[aria-label] > .btn.btn-primary,
+.btn-group[role="group"] > .btn[aria-pressed="true"] {
+  background-color: #1f7fa5;
+  border-color: #1f7fa5;
+  color: #fff;
+  font-weight: 700;
+}
