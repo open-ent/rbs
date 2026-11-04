@@ -1,40 +1,42 @@
 var gulp = require('gulp');
 var webpack = require('webpack-stream');
-var merge = require('merge2');
 const replace = require('gulp-replace');
 var clean = require('gulp-clean');
 var argv = require('yargs').argv;
 var fs = require('fs');
+var path = require('path');
 
 gulp.task('drop-cache', function(){
-    return gulp.src(['./src/main/resources/public/dist'], { read: false })
+    return gulp.src(['./src/main/resources/public/dist'], { read: false, allowEmpty: true })
         .pipe(clean());
 });
 
-gulp.task('webpack', ['drop-cache'], () => {
-    return gulp.src('./src/main/resources/public')
-        .pipe(webpack(require('./webpack.config.js')))
-        .on('error', function handleError() {
-            this.emit('end'); // Recover from errors
-        })
-        .pipe(gulp.dest('./src/main/resources/public/dist'));
-});
+gulp.task('webpack', gulp.series('drop-cache', (done) => {
+    // Appel direct du webpack embarqué par webpack-stream (celui qui a toujours produit les
+    // bundles) : ses flux « through » ne se raccordent pas à ceux de gulp 5. Les erreurs de
+    // typage restent signalées sans interrompre le build, comme sous gulp 3.
+    var config = require('./webpack.config.js');
+    config.output.path = path.resolve(__dirname, './src/main/resources/public/dist');
+    webpack.webpack(config, (err, stats) => {
+        if (stats) console.log(stats.toString({ colors: false, chunks: false }));
+        done(err);
+    });
+}));
 
-gulp.task('build', ['webpack'], () => {
-    var refs = gulp.src("./src/main/resources/view-src/**/*.+(html|json)")
+function views() {
+    return gulp.src("./src/main/resources/view-src/**/*.+(html|json)")
         .pipe(replace('@@VERSION', Date.now()))
         .pipe(gulp.dest("./src/main/resources/view"));
+}
 
-    var copyBehaviours = gulp.src('./src/main/resources/public/dist/behaviours.js')
+function copyBehaviours() {
+    return gulp.src('./src/main/resources/public/dist/behaviours.js')
         .pipe(gulp.dest('./src/main/resources/public/js'));
+}
 
-    // Bug corrigé : `merge[refs, copyBehaviours]` (crochets = accès de propriété) au lieu de
-    // `merge(refs, copyBehaviours)` (appel de fonction) — la tâche ne rendait donc jamais un flux
-    // suivi par gulp, qui la déclarait terminée en ~2ms sans attendre la copie réelle. La copie
-    // aboutissait quand même le plus souvent (l'écriture disque est rapide), mais sans garantie —
-    // un `build.sh` qui démonte son conteneur juste après pourrait couper la copie en cours.
-    return merge(refs, copyBehaviours);
-});
+// gulp.parallel attend la fin des deux copies (l'ancien `merge[refs, copyBehaviours]` ne
+// rendait aucun flux suivi : gulp déclarait la tâche terminée avant la copie réelle).
+gulp.task('build', gulp.series('webpack', gulp.parallel(views, copyBehaviours)));
 
 function getModName(fileContent){
     var getProp = function(prop){
@@ -52,7 +54,7 @@ gulp.task('watch', () => {
         springboard += '/';
     }
 
-    gulp.watch('./src/main/resources/public/ts/**/*.ts', () => gulp.start('build'));
+    gulp.watch('./src/main/resources/public/ts/**/*.ts', gulp.series('build'));
 
     fs.readFile("./gradle.properties", "utf8", function(err, content){
         var modName = getModName(content);
