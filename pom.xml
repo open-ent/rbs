@@ -40,7 +40,22 @@
         <mockitoVersion>4.11.0</mockitoVersion>
         <powerMockVersion>2.0.2</powerMockVersion>
         <ical4jVersion>2.0.2</ical4jVersion>
+        <!-- ical4j 2.0.2 réclame commons-collections4 4.0, vulnérable à la désérialisation
+             d'InvokerTransformer (CVE-2015-7501, CVE-2015-6420) et plus proche que le 4.4
+             qu'apporte org.entcore:common par vertx-mongo-client : sans arbitrage, c'est le
+             4.0 qui entre dans le fat jar. On ramène les deux chemins sur 4.4. -->
+        <commonsCollections4Version>4.4</commonsCollections4Version>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-collections4</artifactId>
+                <version>${commonsCollections4Version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <dependency>
