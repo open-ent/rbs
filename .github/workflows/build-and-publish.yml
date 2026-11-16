@@ -130,10 +130,9 @@ jobs:
                     <releases><enabled>true</enabled></releases>
                     <snapshots><enabled>true</enabled></snapshots>
                   </repository>
-                  <!-- rbs est le seul module dont common vient des libs (6.16.8-patched).
-                       La CI des libs ne publie que sur rct-nexus : sans ce dépôt, la
-                       résolution n'avait d'autre recours que le cache Maven, et la purge
-                       des versions -patched republiées la faisait échouer. -->
+                  <!-- common, session et broker-* sont publiés par la CI du socle
+                       (entcore-v2, version du socle) ; rct-nexus reste un recours si
+                       GitHub Packages ne répond pas. -->
                   <repository>
                     <id>pt-releases</id>
                     <name>rct-nexus releases</name>
